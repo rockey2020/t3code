@@ -74,7 +74,7 @@
     "@t3tools/mobile-source-text": "file:./modules/t3-source-text",
     "@t3tools/mobile-terminal-native": "file:./modules/t3-terminal",
     "@t3tools/shared": "workspace:*",
-    "@tabler/icons-react-native": "^3.44.0",
+    "@tabler/icons-react-native": "^3.51.0",
     "clsx": "^2.1.1",
     "diff": "8.0.3",
     "effect": "catalog:",
@@ -134,7 +134,7 @@
     "react-native-worklets": "0.13.1",
     "remark-gfm": "catalog:",
     "remark-parse": "catalog:",
-    "tailwind-merge": "^3.5.0",
+    "tailwind-merge": "^3.7.0",
     "unified": "catalog:",
     "uniwind": "1.13.2"
   },

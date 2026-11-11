@@ -1,3 +1,6 @@
+import { createLabelTranslator } from "../../i18n/labelTranslation";
+import { threadRuntimeMessages } from "./threadRuntime.messages";
+import { englishComposer, type ComposerTranslator } from "./chatTranslators";
 import {
   codexFeedbackNotice,
   type CodexFeedbackSubmission,
@@ -9,9 +12,12 @@ import { Button } from "../ui/button";
 import { toastManager } from "../ui/toast";
 import type { ComposerBannerStackItem } from "./ComposerBannerStack";
 
+const translateFeedbackLabel = createLabelTranslator(threadRuntimeMessages);
+
 export function feedbackBannerItem(
   submission: CodexFeedbackSubmission,
   onDismiss: () => void,
+  t: ComposerTranslator = englishComposer,
 ): ComposerBannerStackItem | null {
   const notice = codexFeedbackNotice(submission);
   if (!notice) return null;
@@ -21,28 +27,31 @@ export function feedbackBannerItem(
       submission.status === "failed" ? "error" : submission.status === "sent" ? "success" : "info",
     icon: <MessageSquareIcon />,
     ...notice,
+    title: translateFeedbackLabel(notice.title, t),
+    description:
+      notice.description === undefined ? undefined : translateFeedbackLabel(notice.description, t),
     actions:
       submission.status === "sent" ? (
         <Button
           size="xs"
           variant="ghost"
           onClick={() => {
-            void writeTextToClipboard(submission.feedbackId, "Codex feedback thread ID").catch(
+            void writeTextToClipboard(submission.feedbackId, t("Codex feedback thread ID")).catch(
               (error: unknown) => {
                 toastManager.add({
                   type: "error",
-                  title: "Could not copy thread ID",
-                  description: error instanceof Error ? error.message : "An error occurred.",
+                  title: t("Could not copy thread ID"),
+                  description: error instanceof Error ? error.message : t("An error occurred."),
                 });
               },
             );
           }}
         >
-          Copy ID
+          {t("Copy ID")}
         </Button>
       ) : undefined,
     ...(submission.status !== "uploading"
-      ? { dismissLabel: "Dismiss feedback notice", onDismiss }
+      ? { dismissLabel: t("Dismiss feedback notice"), onDismiss }
       : {}),
   };
 }

@@ -1,0 +1,211 @@
+name: Fork desktop release
+run-name: ${{ inputs.channel }} · ${{ inputs.upstream_tag }} · 简体中文
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Prepared immutable source commit SHA
+        required: true
+        type: string
+      version:
+        description: Exact upstream package version
+        required: true
+        type: string
+      tag:
+        description: Fork release tag
+        required: true
+        type: string
+      channel:
+        description: Upstream channel
+        required: true
+        type: choice
+        options: [stable, nightly]
+      upstream_tag:
+        description: Exact published upstream release tag
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: fork-build-${{ inputs.channel }}
+  cancel-in-progress: false
+
+jobs:
+  bundle:
+    name: Validate and build JS bundle
+    if: github.repository == 'rockey2020/t3code'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      NODE_OPTIONS: --max-old-space-size=4096
+      T3CODE_TELEMETRY_CHANNEL: dev
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.ref }}
+          fetch-depth: 2
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+      - name: Validate prepared release identity
+        env:
+          SOURCE_REF: ${{ inputs.ref }}
+          VERSION: ${{ inputs.version }}
+          RELEASE_TAG: ${{ inputs.tag }}
+          CHANNEL: ${{ inputs.channel }}
+          UPSTREAM_TAG: ${{ inputs.upstream_tag }}
+        run: |
+          node --input-type=module <<'JS'
+          import { readFileSync } from 'node:fs';
+          import { releaseChannel } from './.github/scripts/fork-maintenance.mjs';
+          const build = JSON.parse(readFileSync('.fork/build.json', 'utf8'));
+          const e = process.env;
+          if (!/^[0-9a-f]{40}$/.test(e.SOURCE_REF) || releaseChannel(e.UPSTREAM_TAG) !== e.CHANNEL || e.VERSION !== e.UPSTREAM_TAG.slice(1) || e.RELEASE_TAG !== `${e.UPSTREAM_TAG}-zh.${build.fingerprint}` || build.upstreamTag !== e.UPSTREAM_TAG || build.channel !== e.CHANNEL) throw new Error('Prepared source does not match release inputs');
+          JS
+      - uses: ./.github/actions/setup-ci-deps
+        with:
+          install-args: --filter=t3... --filter=@t3tools/web... --filter=@t3tools/desktop... --filter=@t3tools/scripts...
+      - name: Check localization catalogs
+        run: node scripts/i18n-export.ts --check
+      - name: Set exact upstream version
+        env:
+          VERSION: ${{ inputs.version }}
+        run: node scripts/update-release-package-versions.ts "$VERSION"
+      - name: Build shared desktop and web bundles
+        run: vp run build:desktop:bundle
+      - uses: actions/upload-artifact@v7
+        with:
+          name: js-bundle
+          path: |
+            apps/server/dist
+            apps/desktop/dist-electron
+          if-no-files-found: error
+          retention-days: 7
+
+  # This is an embedded Windows component, not a third desktop distribution.
+  # Building it from this fork keeps WSL localized with app updates disabled.
+  wsl:
+    name: Build Linux x64
+    needs: bundle
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      NODE_OPTIONS: --max-old-space-size=4096
+      T3CODE_TELEMETRY_CHANNEL: dev
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.ref }}
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+      - uses: ./.github/actions/setup-ci-deps
+        with:
+          install-args: --filter=t3... --filter=@t3tools/scripts...
+      - uses: actions/download-artifact@v8
+        with:
+          name: js-bundle
+          path: apps
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
+        with:
+          toolchain: stable
+      - name: Build Windows WSL runtime
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y patchelf
+          node scripts/update-release-package-versions.ts "$VERSION"
+          cargo build --locked --release --manifest-path native/resource-monitor/Cargo.toml
+          mkdir -p "$RUNNER_TEMP/cli-resource-monitor/linux-x64"
+          cp native/resource-monitor/target/release/t3-resource-monitor "$RUNNER_TEMP/cli-resource-monitor/linux-x64/"
+          node apps/server/scripts/cli.ts build-exe --verbose
+          node scripts/build-cli-archive.ts --platform linux --arch x64 --version "$VERSION" --resource-monitor-dir "$RUNNER_TEMP/cli-resource-monitor" --output-dir release-cli
+          node scripts/smoke-cli-archive.ts --archive release-cli/* --expect-version "$VERSION"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: cli-linux-x64
+          path: release-cli/*
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
+
+  mac:
+    name: macOS ARM64
+    needs: bundle
+    uses: ./.github/workflows/release-desktop.yml
+    with:
+      label: macOS arm64
+      runner: macos-15
+      platform: mac
+      target: dmg
+      arch: arm64
+      rust_target: aarch64-apple-darwin
+      resource_key: darwin-arm64
+      ref: ${{ inputs.ref }}
+      version: ${{ inputs.version }}
+      release_channel: ${{ inputs.channel }}
+      launch_check: true
+      relay_client_tracing: false
+      clerk_publishable_key: ""
+      clerk_jwt_template: ""
+      clerk_cli_oauth_client_id: ""
+      relay_url: ""
+
+  windows:
+    name: Windows x64
+    needs: [bundle, wsl]
+    uses: ./.github/workflows/release-desktop.yml
+    with:
+      label: Windows x64
+      runner: ubuntu-24.04
+      verify_runner: windows-2025
+      platform: win
+      target: nsis
+      arch: x64
+      rust_target: x86_64-pc-windows-msvc
+      resource_key: win32-x64
+      ref: ${{ inputs.ref }}
+      version: ${{ inputs.version }}
+      release_channel: ${{ inputs.channel }}
+      relay_client_tracing: false
+      clerk_publishable_key: ""
+      clerk_jwt_template: ""
+      clerk_cli_oauth_client_id: ""
+      relay_url: ""
+
+  publish:
+    name: Publish both verified desktop packages
+    needs: [mac, windows]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.ref }}
+          sparse-checkout: |
+            .github/scripts
+            .fork
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: desktop-*
+          merge-multiple: true
+          path: release-publish
+      - name: Publish installers and checksums without update feeds
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+          SOURCE_REF: ${{ inputs.ref }}
+          CHANNEL: ${{ inputs.channel }}
+          UPSTREAM_TAG: ${{ inputs.upstream_tag }}
+        run: node .github/scripts/fork-publish.mjs

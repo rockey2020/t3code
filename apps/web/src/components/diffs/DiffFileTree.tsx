@@ -4,6 +4,7 @@ import { ChevronsDownUpIcon, ChevronsUpDownIcon } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { useStableCallback } from "~/hooks/useStableCallback";
+import { useTranslation } from "~/i18n/useTranslation";
 import { useTheme } from "~/hooks/useTheme";
 import { cn } from "~/lib/utils";
 import { PIERRE_TREE_UNSAFE_CSS, pierreTreeStyle } from "~/pierre-tree-theme";
@@ -11,6 +12,7 @@ import { PIERRE_TREE_UNSAFE_CSS, pierreTreeStyle } from "~/pierre-tree-theme";
 import { areAllDirectoriesExpanded, setAllDirectoriesExpanded } from "../files/fileTreeExpansion";
 import { Button } from "../ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { diffsUiMessages } from "./diffsUi.messages";
 import {
   buildDiffFileTreeUpdates,
   compareDiffFileTreeEntries,
@@ -90,6 +92,7 @@ export function DiffFileTree({
     sort: ordering.sort,
     unsafeCSS: PIERRE_TREE_UNSAFE_CSS,
   });
+  const t = useTranslation(diffsUiMessages);
   const allDirectoriesExpanded = useFileTreeSelector(model, (currentModel) =>
     areAllDirectoriesExpanded(currentModel, directoryPaths),
   );
@@ -197,7 +200,7 @@ export function DiffFileTree({
                   size="icon-xs"
                   variant="ghost"
                   aria-label={
-                    allDirectoriesExpanded ? "Collapse all folders" : "Expand all folders"
+                    allDirectoriesExpanded ? t("Collapse all folders") : t("Expand all folders")
                   }
                   onClick={() =>
                     setAllDirectoriesExpanded(model, directoryPaths, !allDirectoriesExpanded)
@@ -212,7 +215,7 @@ export function DiffFileTree({
               )}
             </TooltipTrigger>
             <TooltipPopup>
-              {allDirectoriesExpanded ? "Collapse all folders" : "Expand all folders"}
+              {allDirectoriesExpanded ? t("Collapse all folders") : t("Expand all folders")}
             </TooltipPopup>
           </Tooltip>
         ) : null}

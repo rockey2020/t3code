@@ -1,3 +1,5 @@
+import { useLocale, useTranslation } from "~/i18n/useTranslation";
+import { pullRequestUiMessages, translatePullRequestLabel } from "./pullRequestUi.messages";
 import type { PreviewCard as PreviewCardPrimitive } from "@base-ui/react/preview-card";
 import { isAtomCommandInterrupted } from "@t3tools/client-runtime/state/runtime";
 import { parsePullRequestAnchor, pullRequestLinkCommit } from "@t3tools/shared/pullRequestAnchor";
@@ -52,6 +54,8 @@ export function PullRequestLinkPreview({
   onOpenFallback?: (url: string) => Promise<void>;
   fallback?: ReactNode;
 }) {
+  const t = useTranslation(pullRequestUiMessages);
+  const locale = useLocale();
   const [open, setOpen] = useState(false);
   const previewActionsRef = useRef<PreviewCardPrimitive.Root.Actions | null>(null);
   const [resolvingClick, setResolvingClick] = useState(false);
@@ -152,7 +156,7 @@ export function PullRequestLinkPreview({
                   {state === null ? null : (
                     <span className="inline-flex shrink-0 items-center gap-1">
                       <state.Icon aria-hidden className={`size-3 ${state.toneClassName}`} />
-                      {state.label}
+                      {translatePullRequestLabel(state.label, locale)}
                     </span>
                   )}
                 </div>
@@ -173,7 +177,7 @@ export function PullRequestLinkPreview({
                       <>
                         <span aria-hidden>·</span>
                         <span className="shrink-0">
-                          opened <RelativeTime timestamp={preview.createdAt} />
+                          {t("opened@@timestamp")} <RelativeTime timestamp={preview.createdAt} />
                         </span>
                       </>
                     )}

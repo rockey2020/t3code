@@ -1,3 +1,8 @@
+import { RuntimeErrorText } from "../RuntimeErrorText";
+import { translateTimelineLabel } from "./timelineLabels";
+import { translateConnectionLabel } from "../settings/settingsConnections.messages";
+import { useLocale, useTranslation } from "~/i18n/useTranslation";
+import { timelineUiMessages } from "./timelineUi.messages";
 import { pipe } from "effect/Function";
 import { useAtomValue } from "@effect/atom-react";
 import {
@@ -60,7 +65,11 @@ export function LinkRequestCard(props: {
   readonly visibility: OrchestrationV2ProjectedTurnItem["visibility"];
 }) {
   const { item } = props;
-  const display = linkRequestDisplay(item, props.visibility, accessLabel);
+  const t = useTranslation(timelineUiMessages);
+  const locale = useLocale();
+  const display = linkRequestDisplay(item, props.visibility, (access) =>
+    translateConnectionLabel(accessLabel(access), locale),
+  );
   if (display.kind === "answered" || display.kind === "pending-elsewhere") {
     const Icon =
       display.kind === "pending-elsewhere"
@@ -74,7 +83,7 @@ export function LinkRequestCard(props: {
       <WorkLogRow
         data-v2-item-type={item.type}
         icon={<Icon className="size-3.5 text-icon-muted" aria-hidden />}
-        label={display.label}
+        label={translateTimelineLabel(display.label, t)}
       />
     );
   }
@@ -85,6 +94,7 @@ function PendingLinkRequest(props: {
   readonly environmentId: EnvironmentId;
   readonly item: LinkRequestItem;
 }) {
+  const t = useTranslation(timelineUiMessages);
   const { item } = props;
   const [open, setOpen] = useState(false);
   const [declining, setDeclining] = useState(false);
@@ -120,14 +130,14 @@ function PendingLinkRequest(props: {
       <div className="flex min-w-0 flex-col gap-1">
         <p className="text-sm font-medium text-foreground">
           {picksMachine(item)
-            ? "Link a machine to this environment"
-            : `Link ${target} to this environment`}
+            ? t("Link a machine to this environment")
+            : t("Link {target} to this environment", { target })}
         </p>
         {item.reason.trim() ? <p className="text-sm text-muted-foreground">{item.reason}</p> : null}
       </div>
       {error !== null ? (
         <p role="alert" className="text-xs text-destructive">
-          {error}
+          <RuntimeErrorText>{error}</RuntimeErrorText>
         </p>
       ) : null}
       {canAnswer ? (
@@ -139,15 +149,15 @@ function PendingLinkRequest(props: {
             disabled={declining}
             onClick={() => void decline()}
           >
-            Decline
+            {t("Decline")}
           </Button>
           <Button type="button" size="xs" disabled={declining} onClick={() => setOpen(true)}>
-            {picksMachine(item) ? "Choose machine…" : "Review link…"}
+            {picksMachine(item) ? t("Choose machine…") : t("Review link…")}
           </Button>
         </div>
       ) : (
         <p className="text-xs text-muted-foreground">
-          Only a session that manages access here can answer this.
+          {t("Only a session that manages access here can answer this.")}
         </p>
       )}
       <LinkRequestDialog
@@ -169,6 +179,7 @@ function LinkRequestDialog(props: {
   readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
 }) {
+  const t = useTranslation(timelineUiMessages);
   const { item } = props;
   const formId = useId();
   const pickMachine = picksMachine(item);
@@ -296,12 +307,14 @@ function LinkRequestDialog(props: {
     >
       <WizardPopup>
         <WizardHeader
-          title={pickMachine ? "Link a machine" : `Link ${targetName}`}
-          description="Agents here can then launch, message and wait on threads there. Revoke it in that machine's Connections."
+          title={pickMachine ? t("Link a machine") : t("Link {target}", { target: targetName })}
+          description={t(
+            "Agents here can then launch, message and wait on threads there. Revoke it in that machine's Connections.",
+          )}
         >
           {steps.length > 1 && !useExisting ? (
             <WizardSteps
-              steps={["Machine", "Access"]}
+              steps={[t("Machine"), t("Access")]}
               currentStep={steps.indexOf(current)}
               summaries={[target.kind === "none" ? null : targetName, null]}
               showSummaries
@@ -339,7 +352,9 @@ function LinkRequestDialog(props: {
                 ) : null}
                 {asksAddress ? (
                   <label className="block space-y-1.5">
-                    <span className="block text-xs font-medium text-foreground">Address</span>
+                    <span className="block text-xs font-medium text-foreground">
+                      {t("Address")}
+                    </span>
                     <Input
                       value={address}
                       onChange={(event) => setAddress(event.target.value)}
@@ -350,8 +365,10 @@ function LinkRequestDialog(props: {
                     />
                     {target.kind === "machine" ? (
                       <span className="block text-xs text-muted-foreground">
-                        This app has no address for {target.label} that another machine can reach.
-                        Enter its https or Tailscale address.
+                        {t(
+                          "This app has no address for {machine} that another machine can reach. Enter its https or Tailscale address.",
+                          { machine: target.label },
+                        )}
                       </span>
                     ) : null}
                   </label>
@@ -368,20 +385,22 @@ function LinkRequestDialog(props: {
                     {canMint ? null : (
                       <label className="block space-y-1.5">
                         <span className="block text-xs font-medium text-foreground">
-                          Pairing code
+                          {t("Pairing code")}
                         </span>
                         <Input
                           value={pairingCode}
                           onChange={(event) => setPairingCode(event.target.value)}
-                          placeholder="Paste the code"
+                          placeholder={t("Paste the code")}
                           disabled={busy}
                           autoComplete="one-time-code"
                           nativeInput
                           spellCheck={false}
                         />
                         <span className="block text-xs text-muted-foreground">
-                          Create a link on {targetName}: Settings → Connections → Create link, then
-                          paste its code here.
+                          {t(
+                            "Create a link on {machine}: Settings → Connections → Create link, then paste its code here.",
+                            { machine: targetName },
+                          )}
                         </span>
                       </label>
                     )}
@@ -392,13 +411,15 @@ function LinkRequestDialog(props: {
             )}
             {useExisting ? (
               <p className="text-xs text-muted-foreground">
-                This environment is already linked to {targetName}. The agent can use that link as
-                it is; change its access in Settings → Connections.
+                {t(
+                  "This environment is already linked to {machine}. The agent can use that link as it is; change its access in Settings → Connections.",
+                  { machine: targetName },
+                )}
               </p>
             ) : null}
             {error !== null ? (
               <p role="alert" className="text-xs text-destructive">
-                {error}
+                <RuntimeErrorText>{error}</RuntimeErrorText>
               </p>
             ) : null}
           </form>
@@ -414,11 +435,11 @@ function LinkRequestDialog(props: {
                 setError(null);
               }}
             >
-              Back
+              {t("Back")}
             </Button>
           ) : (
             <Button variant="outline" type="button" disabled={busy} onClick={close}>
-              Cancel
+              {t("Cancel")}
             </Button>
           )}
           <Button
@@ -426,7 +447,13 @@ function LinkRequestDialog(props: {
             type="submit"
             disabled={busy || (finishesHere ? !ready : !machineReady)}
           >
-            {busy ? "Linking…" : useExisting ? "Use this link" : finishesHere ? "Link" : "Continue"}
+            {busy
+              ? t("Linking…")
+              : useExisting
+                ? t("Use this link")
+                : finishesHere
+                  ? t("Link")
+                  : t("Continue")}
           </Button>
         </WizardFooter>
       </WizardPopup>
@@ -441,11 +468,12 @@ function MachinePicker(props: {
   readonly disabled: boolean;
   readonly onChange: (value: string) => void;
 }) {
+  const t = useTranslation(timelineUiMessages);
   const labelId = useId();
   return (
     <div className="space-y-2">
       <span id={labelId} className="block text-xs font-medium">
-        Machine
+        {t("Machine")}
       </span>
       <RadioGroup
         aria-labelledby={labelId}
@@ -469,7 +497,7 @@ function MachinePicker(props: {
         ))}
         <label className="flex cursor-pointer items-center gap-2.5 rounded-lg border px-3 py-2 text-sm">
           <Radio value={ANOTHER_ADDRESS} />
-          <span className="min-w-0 flex-1 font-medium">Another address…</span>
+          <span className="min-w-0 flex-1 font-medium">{t("Another address…")}</span>
         </label>
       </RadioGroup>
     </div>

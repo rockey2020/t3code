@@ -1,6 +1,7 @@
 import type { RunId, ScreenReaderAnnouncements } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 
+import { translateNow } from "~/i18n/useTranslation";
 import type { TimelineEntry, WorkLogEntry } from "../../session-logic";
 import {
   liveWorkEntryLabel,
@@ -8,6 +9,7 @@ import {
   timelineEntryStartsResponse,
 } from "./MessagesTimeline.logic";
 import { markdownPlainText } from "./timelineMinimapItems";
+import { timelineUiMessages } from "./timelineUi.messages";
 
 export interface TurnMessage {
   readonly id: string;
@@ -36,10 +38,13 @@ const MESSAGE_MAX_LENGTH = 2_000;
 
 // On screen these labels are a path or a query beside an icon.
 function withVerb(work: WorkLogEntry, label: string) {
-  if (work.itemType === "file_change") return `Editing ${label}`;
+  if (work.itemType === "file_change")
+    return translateNow(timelineUiMessages, "Editing {label}", { label });
   if (work.itemType !== "file_search" && work.itemType !== "web_search") return label;
   if (/^search(?:ed|ing)?\s/i.test(label)) return label;
-  return `${work.itemType === "web_search" ? "Searching the web for" : "Searching for"} ${label}`;
+  return work.itemType === "web_search"
+    ? translateNow(timelineUiMessages, "Searching the web for {label}", { label })
+    : translateNow(timelineUiMessages, "Searching for {label}", { label });
 }
 
 type MessageEntry = Extract<TimelineEntry, { kind: "message" }>;
@@ -60,7 +65,8 @@ function completedBeforeSuperseded(entry: MessageEntry) {
 
 function stepLabel(work: WorkLogEntry, workspaceRoot: string | undefined): string | null {
   // Reasoning text is never read out.
-  if (work.itemType === "reasoning") return "Thinking";
+  if (work.itemType === "reasoning")
+    return translateNow(timelineUiMessages, "Thinking@@announcement");
   const status = work.toolLifecycleStatus;
   if (status === "failed" || status === "declined" || status === "stopped") return null;
   const label = liveWorkEntryLabel(work, workspaceRoot, true).replace(/\s+/g, " ").trim();

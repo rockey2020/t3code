@@ -4,6 +4,8 @@ import { DBusError, Message, MessageType, Variant, type MessageBus } from "dbus-
 import { afterEach, expect, it, vi } from "vite-plus/test";
 import { PortalCaptureShortcut, portalShortcutTrigger } from "./PortalCaptureShortcut.ts";
 
+vi.mock("electron", () => ({ app: { getPreferredSystemLanguages: () => ["en-US"] } }));
+
 const chord = {
   key: "2",
   modKey: true,
@@ -64,7 +66,7 @@ class FakeBus extends NodeEvents.EventEmitter {
         [
           this.boundId,
           {
-            description: new Variant("s", "Capture a window"),
+            description: new Variant("s", "截取窗口"),
             trigger_description: new Variant("s", this.actualLabel),
           },
         ],
@@ -144,7 +146,7 @@ it("accepts Hyprland's action-only binding without claiming the keys are reserve
   });
   expect(bus.boundId).toBe("capture-window");
   expect(bus.calls.find((call) => call.member === "BindShortcuts")?.body[1]).toEqual([
-    ["capture-window", { description: new Variant("s", "Capture a window") }],
+    ["capture-window", { description: new Variant("s", "截取窗口") }],
   ]);
   bus.activate("wrong");
   bus.activate(bus.boundId, bus.session, ":1.999");
@@ -206,7 +208,7 @@ it("binds only the requested shortcut with a stable ID across sessions", async (
     [
       bus.boundId,
       {
-        description: new Variant("s", "Capture a window"),
+        description: new Variant("s", "截取窗口"),
         preferred_trigger: new Variant("s", "CTRL+SHIFT+2"),
       },
     ],
@@ -238,7 +240,7 @@ it("replaces a binding without restarting the application and stops the old call
     [
       next.bus.boundId,
       {
-        description: new Variant("s", "Capture a window"),
+        description: new Variant("s", "截取窗口"),
         preferred_trigger: new Variant("s", "CTRL+SHIFT+8"),
       },
     ],

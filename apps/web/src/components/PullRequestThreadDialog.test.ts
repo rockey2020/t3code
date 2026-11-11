@@ -9,6 +9,9 @@ import { AsyncResult } from "effect/reactivity";
 import { isValidElement, type ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
+// The locale setup loads React before this direct-hook test installs its mock.
+vi.hoisted(() => vi.resetModules());
+
 const state = vi.hoisted(() => ({
   canOperate: false,
   canWriteSourceControl: true,
@@ -35,6 +38,8 @@ vi.mock("react", async (importOriginal) => ({
     return [state.hookValues[index], (value: unknown) => (state.hookValues[index] = value)];
   },
   useRef: (current: unknown) => ({ current }),
+  useSyncExternalStore: (_subscribe: unknown, _read: unknown, serverSnapshot: () => unknown) =>
+    serverSnapshot(),
   useEffect: () => {},
 }));
 vi.mock("@tanstack/react-pacer", () => ({

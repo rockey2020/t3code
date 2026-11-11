@@ -1,3 +1,4 @@
+import { APP_UPDATES_ENABLED, APP_UPDATES_DISABLED_REASON } from "@t3tools/shared/appUpdatePolicy";
 import {
   AuthEnvironmentMaintainScope,
   sessionGrantsScope,
@@ -26,6 +27,7 @@ export function supportsEnvironmentUpdate(
   capabilities: Pick<ExecutionEnvironmentCapabilities, "serverSelfUpdate" | "desktopAppUpdate">,
 ) {
   return (
+    APP_UPDATES_ENABLED &&
     capabilities.serverSelfUpdate !== undefined &&
     (capabilities.serverSelfUpdate !== "desktop-managed" || capabilities.desktopAppUpdate === true)
   );
@@ -60,6 +62,7 @@ async function fetchReleases(url: string, accept: string, signal: AbortSignal) {
 }
 
 export async function findEnvironmentUpdate(currentVersion: string, signal: AbortSignal) {
+  if (!APP_UPDATES_ENABLED) throw new Error(APP_UPDATES_DISABLED_REASON);
   const channel = cliReleaseChannelOf(currentVersion);
   // Public release pages avoid the anonymous API quota shared by devices on the same network.
   const response = await fetchReleases(

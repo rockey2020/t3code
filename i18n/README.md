@@ -1,0 +1,71 @@
+# 翻译记录
+
+[`zh-CN.json`](zh-CN.json) 汇总了本分支全部界面译文：按所在源文件分组，每一条都是“英文原文 → 中文”。它是汉化成果的完整快照，方便查阅、检索和对照，也能在官方大改某个界面后，从这里找回原来的译文。
+
+真正生效的译文写在各界面旁边的 `*.messages.ts` 文件里（桌面原生菜单在 `apps/desktop/src/window/menuLocalization.ts`）。改了译文后运行：
+
+```bash
+vp run i18n:export
+```
+
+重新生成 `zh-CN.json`。`scripts/fork-i18n.test.ts` 会检查它与代码一致，`vp run check:changed` 在任何翻译文件变动时都会运行这项检查。
+
+键名里 `@@` 之后的部分只用来区分语境，例如 `"Input@@thread-status"`，界面上显示的英文是 `Input`。`{count}` 这类占位符会在显示时替换成实际内容。
+
+## 术语约定
+
+同一英文在各处必须译法一致，下列术语有固定译名：
+
+| 英文                | 中文                                          |
+| ------------------- | --------------------------------------------- |
+| thread              | 会话                                          |
+| project             | 项目                                          |
+| environment         | 环境                                          |
+| provider            | 提供方                                        |
+| worktree            | 工作树                                        |
+| agent               | 智能体                                        |
+| keybinding          | 快捷键                                        |
+| archive             | 归档                                          |
+| snooze              | 暂缓                                          |
+| settle              | 收尾                                          |
+| sidebar             | 侧边栏                                        |
+| beta                | 测试版                                        |
+| labs                | 实验功能                                      |
+| checkout            | 工作副本                                      |
+| machine             | 机器（指本机时写“本机”）                      |
+| device              | 设备（手机、模拟器）                          |
+| source control      | 版本控制                                      |
+| review guide        | 审查导览                                      |
+| Git stash           | 贮藏（恢复贮藏）；输入框提示词 stash 为暂存   |
+| schedule            | 定时（定时方式、定时规则）                    |
+| plan                | 智能体计划；订阅套餐                          |
+| secret              | 凭据；key / API key / signing key 为密钥      |
+| Open                | PR 状态为开放；动作为打开；设备折叠形态为展开 |
+| issue               | issue（GitHub 议题）                          |
+| host                | 代码托管平台为托管平台；运行机器为主机        |
+| archive（文件预览） | 压缩包                                        |
+| QR code             | 二维码                                        |
+
+产品名、品牌和技术缩写保持英文，例如 Agent Platform、ACP Registry、Span、T3 Code、T3 Connect、GitHub、Codex、Claude、Cursor、CLI、MCP、SSH、API、URL、JSON、token、macOS、Windows、Finder。GitHub 的 issue 保留英文。导航、标签页、分区标题、按钮、菜单项和字段名等短标签中，pull request 用 PR，merge request 用 MR；描述、提示、错误和通知等完整句子保留 pull request / merge request，句首首字母大写，句中照原文小写。来自代码的 `{kind}` 占位符值及其译文保持原样。change request 保留英文。完整清单以 [`scripts/fork-i18n.test.ts`](../scripts/fork-i18n.test.ts) 为准。
+
+## 同步官方后补翻译
+
+合并官方更新后，列出新增的英文界面文字：
+
+```bash
+vp run i18n:untranslated -- <合并前的提交>
+```
+
+不带参数时检查网页端、桌面端，以及和手机端共用的 `packages/client-runtime`。共用代码里的英文不能直接改成 `t()`，要在网页显示它的地方翻译。`--path <路径前缀>` 只看某个目录。把需要翻译的文字用 `t()` 包起来，在同一区域的 `*.messages.ts` 里加上中文，再运行 `vp run i18n:export`。
+
+发给智能体的指令、日志和报错诊断、品牌名、快捷键这类文字刻意保留英文。确认要保留英文的，写进 [`keep-english.txt`](keep-english.txt)，检查脚本就不会再报告。
+
+## 本分支的来源与上游优先原则
+
+来源提交和许可证见 [NOTICE.md](NOTICE.md)。翻译只作用于应用界面，不修改对话正文、代码、路径、终端输出或服务端协议。界面可在设置中切回 English；首次启动默认简体中文。桌面原生菜单默认简体中文，暂不跟随界面中的 English 选择，原生移动客户端尚未覆盖。
+
+同步前运行 `vp run i18n:upstream -- upstream/main`。脚本只读取指定 Git 提交，不联网、不改代码；发现上游可能提供简体中文时输出候选文件并以状态码 2 停止，检查失败返回 1。它是保守的启发式检查，不代替审查上游发布说明和代码。
+
+如果上游引入原生简体中文或合并其他翻译方案，以其运行时、语言设置和词典结构为准：迁移仍有用的译文，删除重复实现，再补全缺失翻译。不要将本分支翻译补丁盲目覆盖到新的上游实现上。
+
+同步完成后运行漏译扫描、`vp run i18n:export` 和翻译测试，并检查实际界面。扫描结果是待人工判断的候选项；零候选不代表整个应用已完全翻译。日期、数字、占位符、品牌和动态用户内容尤其需要检查。

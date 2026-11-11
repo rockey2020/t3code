@@ -11,11 +11,13 @@ import * as Schema from "effect/Schema";
 import { type ReactNode, useEffect, useEffectEvent, useRef, useState } from "react";
 
 import { isElectron } from "../../env";
+import { translateNow, useTranslation } from "../../i18n/useTranslation";
 import { runConnectMcpApproval } from "../../state/connectMcpApproval";
 import { resolveClerkSignInProps } from "../clerk/authRedirect";
 import { Button } from "../ui/button";
 import { Spinner } from "../ui/spinner";
 import { StandalonePage, StandalonePageHeader } from "../ui/standalone-page";
+import { authUiMessages } from "./authUi.messages";
 import {
   type McpApprovalAnswer,
   type McpApprovalTransport,
@@ -44,7 +46,7 @@ function connectTransport(
         kind: "error",
         message: isUnavailable(result.failure)
           ? result.failure.message
-          : "Could not reach this environment. Try again.",
+          : translateNow(authUiMessages, "Could not reach this environment. Try again."),
       };
     }
     onEnvironment({
@@ -73,6 +75,7 @@ function connectTransport(
  * T3 Connect here and approves with that session, so no sign-in code is needed.
  */
 export function ApproveAgentSurface() {
+  const t = useTranslation(authUiMessages);
   const [environmentId] = useState(readEnvironmentId);
   const [authorization] = useState(readAuthorizationRequest);
   // Another site could frame this page and steer a click onto Approve.
@@ -103,8 +106,8 @@ export function ApproveAgentSurface() {
   if (environmentId === null || transport === null) {
     return (
       <Message
-        title="This sign-in link is incomplete"
-        description="Close this page and start the sign-in again from your agent."
+        title={t("This sign-in link is incomplete")}
+        description={t("Close this page and start the sign-in again from your agent.")}
       />
     );
   }
@@ -112,8 +115,8 @@ export function ApproveAgentSurface() {
   if (framed) {
     return (
       <Message
-        title="Open this page in its own window"
-        description="For your safety, agent sign-ins cannot be approved inside another site."
+        title={t("Open this page in its own window")}
+        description={t("For your safety, agent sign-ins cannot be approved inside another site.")}
       />
     );
   }
@@ -122,9 +125,9 @@ export function ApproveAgentSurface() {
     return (
       <StandalonePage>
         <StandalonePageHeader
-          context="Agent sign-in"
-          title="Connecting to T3 Connect"
-          description="One moment while your account loads."
+          context={t("Agent sign-in")}
+          title={t("Connecting to T3 Connect")}
+          description={t("One moment while your account loads.")}
         />
         <Spinner className="mt-6" size="lg" tone="muted" />
       </StandalonePage>
@@ -134,12 +137,12 @@ export function ApproveAgentSurface() {
   if (!isSignedIn) {
     return (
       <Message
-        title="Sign in to approve"
-        description="Sign in to T3 Connect with the account this environment is linked to."
+        title={t("Sign in to approve")}
+        description={t("Sign in to T3 Connect with the account this environment is linked to.")}
       >
         <div className="mt-6">
           <Button type="button" onClick={openSignIn}>
-            Sign in
+            {t("Sign in")}
           </Button>
         </div>
       </Message>
@@ -164,7 +167,7 @@ export function ApproveAgentSurface() {
                 <a href={`${new URL("/connect-agent", environment.url).toString()}?${search}`} />
               }
             >
-              Use a sign-in code instead
+              {t("Use a sign-in code instead")}
             </Button>
           ) : null}
           <Button
@@ -173,7 +176,7 @@ export function ApproveAgentSurface() {
             onClick={() => void clerk.signOut({ redirectUrl: window.location.href })}
             type="button"
           >
-            Use another account
+            {t("Use another account")}
           </Button>
         </div>
       }
@@ -190,9 +193,10 @@ function Message({
   readonly description: string;
   readonly children?: ReactNode;
 }) {
+  const t = useTranslation(authUiMessages);
   return (
     <StandalonePage>
-      <StandalonePageHeader context="Agent sign-in" title={title} description={description} />
+      <StandalonePageHeader context={t("Agent sign-in")} title={title} description={description} />
       {children}
     </StandalonePage>
   );

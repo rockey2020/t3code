@@ -5,6 +5,9 @@ import { RESIZABLE_WIDTH_PROPERTY, useResizableWidth } from "~/hooks/useResizabl
 import { observeResize } from "~/lib/observeResize";
 import { cn } from "~/lib/utils";
 
+import { useTranslation } from "~/i18n/useTranslation";
+import { filesUiMessages } from "./filesUi.messages";
+
 const MIN_WIDTH = 160;
 const MAX_WIDTH = 560;
 const FILE_CONTENT_MIN_WIDTH = 256;
@@ -20,7 +23,7 @@ export function FileExplorerPane({
   defaultWidth = 256,
   defaultWidthFraction,
   minWidth = MIN_WIDTH,
-  resizeLabel = "Resize file explorer",
+  resizeLabel,
 }: {
   resizable: boolean;
   children: ReactNode;
@@ -30,6 +33,7 @@ export function FileExplorerPane({
   minWidth?: number;
   resizeLabel?: string;
 }) {
+  const t = useTranslation(filesUiMessages);
   const [maxWidth, setMaxWidth] = useState(MAX_WIDTH);
   const [responsiveDefaultWidth, setResponsiveDefaultWidth] = useState(defaultWidth);
   const { width, setWidth, handlers } = useResizableWidth({
@@ -61,7 +65,7 @@ export function FileExplorerPane({
         measure();
         return observeResize(row, measure);
       }}
-      aria-label="File explorer"
+      aria-label={t("File explorer")}
       className={cn(
         "relative flex min-h-0 min-w-0 shrink-0 bg-background",
         resizable ? "border-l border-border/60" : "flex-1",
@@ -78,7 +82,7 @@ export function FileExplorerPane({
       {resizable ? (
         <RightPanelResizeHandle
           handlers={handlers}
-          label={resizeLabel}
+          label={resizeLabel ?? t("Resize file explorer")}
           tabIndex={0}
           aria-valuenow={width}
           aria-valuemin={minWidth}

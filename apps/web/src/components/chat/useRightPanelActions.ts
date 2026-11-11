@@ -1,3 +1,5 @@
+import { useTranslation } from "~/i18n/useTranslation";
+import { threadPanelUiMessages } from "./threadPanelUi.messages";
 import type { ToolCallDiffTarget } from "../../diffPanelStore";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import type { ThreadPreviewState } from "../../previewStateStore";
@@ -66,6 +68,7 @@ interface RightPanelActionsInput {
  * requests, device, and terminal tabs.
  */
 export function useRightPanelActions(input: RightPanelActionsInput) {
+  const t = useTranslation(threadPanelUiMessages);
   const {
     closeRightPanelSurface,
     activeThreadRef,
@@ -119,7 +122,7 @@ export function useRightPanelActions(input: RightPanelActionsInput) {
         toastManager.add(
           stackedThreadToast({
             type: "error",
-            title: "Unable to open browser",
+            title: t("Unable to open browser"),
             description: error.message,
           }),
         );
@@ -251,8 +254,8 @@ export function useRightPanelActions(input: RightPanelActionsInput) {
       toastManager.add(
         stackedThreadToast({
           type: "error",
-          title: "Failed to copy path",
-          description: "Clipboard API unavailable.",
+          title: t("Failed to copy path"),
+          description: t("Clipboard API unavailable."),
         }),
       );
       return;
@@ -266,7 +269,7 @@ export function useRightPanelActions(input: RightPanelActionsInput) {
       () => {
         toastManager.add({
           type: "success",
-          title: "Path copied",
+          title: t("Path copied"),
           description: clipboardPath,
         });
       },
@@ -274,8 +277,8 @@ export function useRightPanelActions(input: RightPanelActionsInput) {
         toastManager.add(
           stackedThreadToast({
             type: "error",
-            title: "Failed to copy path",
-            description: error instanceof Error ? error.message : "An error occurred.",
+            title: t("Failed to copy path"),
+            description: error instanceof Error ? error.message : t("An error occurred."),
           }),
         );
       },

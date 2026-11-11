@@ -13,6 +13,14 @@
         ".coderabbit.config.ts",
         ".github/scripts/thread-transfer-report.cjs",
       ],
+      // Keep archived upstream release tools reachable for future syncs.
+      "github-actions": {
+        "config": [
+          ".github/workflows/*.{yml,yaml}",
+          ".github/upstream-workflows/*.{yml,yaml}",
+          ".github/**/action.{yml,yaml}",
+        ],
+      },
       "vite": { "entry": [".github/**/*.test.cjs"] },
       "vitest": { "entry": [".github/**/*.test.cjs"] },
     },
@@ -28,6 +36,7 @@
         // These fixture scripts are injected into a browser page by path.
         "fixtures/*/*.js",
         "knip-schemas.ts",
+        "i18n-upstream.node-test.mjs",
         "linux-after-pack.ts",
         "mobile-behavior/run.ts",
         "mobile-native-client.ts",

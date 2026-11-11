@@ -1,3 +1,4 @@
+import { APP_UPDATES_ENABLED, APP_UPDATES_DISABLED_REASON } from "@t3tools/shared/appUpdatePolicy";
 /**
  * DesktopUpdatePolicy - what the administrator's managed policy allows the desktop updater to do.
  * The desktop reads the policy file itself, before any backend runs, and fails closed: a policy it
@@ -36,7 +37,15 @@ export const unmanagedUpdatePolicy: UpdatePolicy = {
   message: null,
 };
 
-function resolveUpdatePolicy(document: ManagedPolicyDocument | undefined): UpdatePolicy {
+export function resolveUpdatePolicy(document: ManagedPolicyDocument | undefined): UpdatePolicy {
+  if (!APP_UPDATES_ENABLED) {
+    return {
+      mode: "off",
+      feedUrl: undefined,
+      allowNightly: false,
+      message: APP_UPDATES_DISABLED_REASON,
+    };
+  }
   const updates = document?.limits?.updates;
   if (document === undefined || updates === undefined) return unmanagedUpdatePolicy;
   return {

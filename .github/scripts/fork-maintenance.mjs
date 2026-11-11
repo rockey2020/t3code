@@ -1,0 +1,317 @@
+import * as NodeChildProcess from "node:child_process";
+import * as NodeCrypto from "node:crypto";
+import * as NodeFS from "node:fs";
+import * as NodePath from "node:path";
+import * as NodeURL from "node:url";
+const root = NodePath.resolve(NodePath.dirname(NodeURL.fileURLToPath(import.meta.url)), "../..");
+const config = JSON.parse(NodeFS.readFileSync(NodePath.resolve(root, ".fork/config.json"), "utf8"));
+const git = (args, options = {}) =>
+  NodeChildProcess.execFileSync("git", args, {
+    cwd: root,
+    encoding: "utf8",
+    maxBuffer: 32 * 1024 * 1024,
+    ...options,
+  }).trim();
+const output = (name, value) => {
+  if (process.env.GITHUB_OUTPUT)
+    NodeFS.appendFileSync(process.env.GITHUB_OUTPUT, `${name}=${value}\n`);
+};
+
+export function releaseChannel(tag) {
+  if (/^v\d+\.\d+\.\d+$/.test(tag)) return "stable";
+  if (/^v\d+\.\d+\.\d+-nightly\.\d{8}\.\d+$/.test(tag)) return "nightly";
+  return null;
+}
+
+export function selectReleases(releases) {
+  const sorted = releases
+    .filter((r) => !r.draft)
+    .toSorted((a, b) => b.published_at.localeCompare(a.published_at));
+  return ["stable", "nightly"].flatMap((channel) => {
+    const release = sorted.find(
+      (r) => releaseChannel(r.tag_name) === channel && (channel === "nightly" || !r.prerelease),
+    );
+    return release ? [{ ...release, channel }] : [];
+  });
+}
+
+export function releaseComplete(release) {
+  return Boolean(
+    !release.draft &&
+    release.assets?.some((a) => /-arm64\.dmg$/.test(a.name)) &&
+    release.assets?.some((a) => /-x64\.exe$/.test(a.name)),
+  );
+}
+
+async function api(path, options = {}) {
+  const response = await fetch(`https://api.github.com/${path}`, {
+    ...options,
+    headers: {
+      Accept: "application/vnd.github+json",
+      Authorization: `Bearer ${process.env.GH_TOKEN}`,
+      "X-GitHub-Api-Version": "2022-11-28",
+      ...options.headers,
+    },
+    signal: AbortSignal.timeout(60000),
+  });
+  if (response.status === 404 && options.allowMissing) return null;
+  if (!response.ok)
+    throw new Error(
+      `GitHub ${options.method ?? "GET"} ${path}: ${response.status} ${await response.text()}`,
+    );
+  return response.status === 204 ? null : response.json();
+}
+
+async function verifyRepository() {
+  if (process.env.GITHUB_REPOSITORY !== config.repository)
+    throw new Error("Maintenance is restricted to the configured fork.");
+  const repository = await api(`repos/${config.repository}`);
+  if (repository.id !== config.repositoryId)
+    throw new Error("Repository identity changed. Refusing to modify a recreated repository.");
+}
+
+// Upstream's workflows require its private runners and signing/deployment keys.
+// Keep them for reference, but only the fork's workflow set can execute here.
+function archiveUpstreamWorkflows(original) {
+  NodeFS.mkdirSync(NodePath.resolve(root, ".github/upstream-workflows"), { recursive: true });
+  for (const name of NodeFS.readdirSync(NodePath.resolve(root, ".github/workflows"))) {
+    if (["fork-maintenance.yml", "fork-build.yml"].includes(name)) continue;
+    NodeFS.renameSync(
+      NodePath.resolve(root, ".github/workflows", name),
+      NodePath.resolve(root, ".github/upstream-workflows", name),
+    );
+  }
+  // Scheduled runs do not change executable workflow definitions. Keep new
+  // upstream definitions in the archive for a validated maintenance change.
+  git(["restore", "--source", original, "--staged", "--worktree", ".github/workflows"]);
+}
+
+async function sync() {
+  await verifyRepository();
+  if (git(["status", "--porcelain"])) throw new Error("Sync requires a clean checkout.");
+  const original = git(["rev-parse", "HEAD"]);
+  output("original", original);
+  git(["config", "user.name", "github-actions[bot]"]);
+  git(["config", "user.email", "41898282+github-actions[bot]@users.noreply.github.com"]);
+  if (!git(["remote"]).split("\n").includes("upstream"))
+    git(["remote", "add", "upstream", `https://github.com/${config.upstream}.git`]);
+  git([
+    "fetch",
+    "--filter=blob:none",
+    "--no-tags",
+    "upstream",
+    "+refs/heads/main:refs/remotes/upstream/main",
+  ]);
+  const upstream = git(["rev-parse", "upstream/main"]);
+  // Native upstream localization must be adopted deliberately, never hidden by
+  // the fork's translation runtime. Exit 2 leaves main unchanged for repair.
+  NodeChildProcess.execFileSync(process.execPath, ["scripts/i18n-upstream.mjs", "upstream/main"], {
+    cwd: root,
+    stdio: "inherit",
+  });
+  let conflict = false;
+  try {
+    git(["merge", "--no-commit", "--no-ff", "upstream/main"]);
+  } catch {
+    conflict = true;
+  }
+  if (conflict) {
+    const unresolved = git(["diff", "--name-only", "--diff-filter=U"]).split("\n").filter(Boolean);
+    // Only workflow archival is a mechanical conflict. Never silently choose
+    // ours/theirs for source, translations, package versions or a lockfile.
+    for (const file of unresolved.filter(
+      (p) => p.startsWith(".github/workflows/") && !p.split("/").at(-1).startsWith("fork-"),
+    )) {
+      if (file.endsWith("/release-desktop.yml")) {
+        git(["checkout", "--theirs", "--", file]);
+        git(["add", "--", file]);
+      } else {
+        const contents = git(["show", `upstream/main:${file}`]);
+        const archived = file.replace(".github/workflows/", ".github/upstream-workflows/");
+        NodeFS.mkdirSync(NodePath.dirname(NodePath.resolve(root, archived)), { recursive: true });
+        NodeFS.writeFileSync(NodePath.resolve(root, archived), `${contents}\n`);
+        git(["rm", "-f", "--", file]);
+        git(["add", "--", archived]);
+      }
+    }
+    const remaining = git(["diff", "--name-only", "--diff-filter=U"]);
+    if (remaining) {
+      NodeFS.writeFileSync(
+        NodePath.resolve(root, "fork-maintenance-report.json"),
+        JSON.stringify({ status: "conflict", upstream, files: remaining.split("\n") }, null, 2),
+      );
+      git(["merge", "--abort"]);
+      throw new Error(
+        `Source conflicts require semantic repair; origin is unchanged:\n${remaining}`,
+      );
+    }
+  }
+  archiveUpstreamWorkflows(original);
+  NodeFS.writeFileSync(
+    NodePath.resolve(root, ".fork/upstream.json"),
+    `${JSON.stringify({ sha: upstream }, null, 2)}\n`,
+  );
+  git(["add", ".github", ".fork/upstream.json"]);
+  if (git(["status", "--porcelain"]))
+    git(["commit", "-m", `chore(fork): synchronize upstream ${upstream.slice(0, 12)}`]);
+}
+
+async function prepare() {
+  await verifyRepository();
+  if (git(["status", "--porcelain"])) {
+    git(["add", "-A"]);
+    git(["commit", "-m", "chore(fork): refresh validated dependencies and translations"]);
+  }
+  // A regular push rejects concurrent user changes; no reset or force-push.
+  git(["push", "origin", `HEAD:refs/heads/${config.branch}`]);
+  const fork = git(["rev-parse", "HEAD"]);
+  const state = JSON.parse(
+    NodeFS.readFileSync(NodePath.resolve(root, ".fork/upstream.json"), "utf8"),
+  );
+  const patch = git([
+    "diff",
+    "--binary",
+    state.sha,
+    fork,
+    "--",
+    ".",
+    ":(exclude).fork/upstream.json",
+    ":(exclude).fork/release-sources.json",
+    ":(exclude).github/workflows",
+    ":(exclude).github/upstream-workflows",
+  ]);
+  const workflowDelta = git(["diff", state.sha, fork, "--", ".github/workflows"]);
+  const fingerprint = NodeCrypto.createHash("sha256")
+    .update(patch)
+    .update(workflowDelta)
+    .digest("hex")
+    .slice(0, 12);
+  const releases = [];
+  for (let page = 1; page <= 10; page++) {
+    const next = await api(`repos/${config.upstream}/releases?per_page=100&page=${page}`);
+    releases.push(...next);
+    if (selectReleases(releases).length === 2 || next.length < 100) break;
+  }
+  const selected = selectReleases(releases);
+  if (selected.length !== 2)
+    throw new Error(
+      "Could not NodePath.resolve both published upstream stable and nightly releases.",
+    );
+  const overridePath = NodePath.resolve(root, ".fork/release-sources.json");
+  const overrides = NodeFS.existsSync(overridePath)
+    ? JSON.parse(NodeFS.readFileSync(overridePath, "utf8"))
+    : {};
+  const builds = [];
+  const failures = [];
+  for (const release of selected) {
+    try {
+      const tag = `${release.tag_name}-zh.${fingerprint}`;
+      const existing = await api(
+        `repos/${config.repository}/releases/tags/${encodeURIComponent(tag)}`,
+        { allowMissing: true },
+      );
+      if (existing && releaseComplete(existing) && process.env.REBUILD !== "true") continue;
+      git(["fetch", "--no-tags", "upstream", `refs/tags/${release.tag_name}`]);
+      const source = git(["rev-parse", "FETCH_HEAD^{commit}"]);
+      const branch = `fork-build/${release.tag_name}-${fingerprint}`;
+      const remote = git(["ls-remote", "--heads", "origin", `refs/heads/${branch}`]).split(/\s/)[0];
+      if (remote) {
+        git(["fetch", "--no-tags", "origin", branch]);
+        const previous = JSON.parse(git(["show", `${remote}:.fork/build.json`]));
+        if (
+          previous.upstreamSha !== source ||
+          previous.fingerprint !== fingerprint ||
+          previous.upstreamTag !== release.tag_name ||
+          previous.channel !== release.channel
+        )
+          throw new Error(`Existing build branch has different provenance: ${branch}`);
+        builds.push({
+          ref: remote,
+          version: release.tag_name.slice(1),
+          tag,
+          channel: release.channel,
+          upstream_tag: release.tag_name,
+        });
+        continue;
+      }
+      const override = overrides[source];
+      const useOverride = override?.fingerprint === fingerprint;
+      if (useOverride) {
+        if (!/^[0-9a-f]{40}$/.test(override.sourceCommit))
+          throw new Error("Invalid audited release source commit");
+        git(["fetch", "--no-tags", "origin", override.sourceCommit]);
+        git(["merge-base", "--is-ancestor", source, override.sourceCommit]);
+      }
+      const worktree = NodePath.resolve(root, `../fork-source-${release.channel}`);
+      git(["worktree", "add", "--detach", worktree, useOverride ? override.sourceCommit : source]);
+      try {
+        // --3way reports conflicts instead of replacing newer upstream logic.
+        if (patch && !useOverride)
+          git(["apply", "--3way", "--whitespace=nowarn", "-"], {
+            cwd: worktree,
+            input: `${patch}\n`,
+          });
+        // Source branches keep the exact upstream workflow files. The release
+        // is executed by the fork workflow on main, not by these definitions.
+        NodeFS.writeFileSync(
+          NodePath.resolve(worktree, ".fork/build.json"),
+          `${JSON.stringify({ upstream: config.upstream, upstreamTag: release.tag_name, upstreamSha: source, forkSha: fork, fingerprint, channel: release.channel }, null, 2)}\n`,
+        );
+        git(["add", "-A"], { cwd: worktree });
+        git(
+          ["commit", "-m", `build(fork): prepare ${release.tag_name} with Chinese localization`],
+          { cwd: worktree },
+        );
+        const commit = git(["rev-parse", "HEAD"], { cwd: worktree });
+        git(["push", "origin", `${commit}:refs/heads/${branch}`]);
+        builds.push({
+          ref: commit,
+          version: release.tag_name.slice(1),
+          tag,
+          channel: release.channel,
+          upstream_tag: release.tag_name,
+        });
+      } finally {
+        git(["worktree", "remove", "--force", worktree]);
+      }
+    } catch (error) {
+      failures.push({ channel: release.channel, tag: release.tag_name, error: String(error) });
+    }
+  }
+  NodeFS.writeFileSync(
+    NodePath.resolve(root, "fork-maintenance-report.json"),
+    JSON.stringify(
+      {
+        status: failures.length ? "partial-failure" : "prepared",
+        fork,
+        upstream: state.sha,
+        builds,
+        failures,
+      },
+      null,
+      2,
+    ),
+  );
+  for (const build of builds) {
+    await api(`repos/${config.repository}/actions/workflows/fork-build.yml/dispatches`, {
+      method: "POST",
+      body: JSON.stringify({ ref: config.branch, inputs: build }),
+    });
+  }
+  console.log(`Prepared and dispatched ${builds.length} release build(s).`);
+  if (failures.length)
+    throw new AggregateError(
+      failures.map((failure) => new Error(JSON.stringify(failure))),
+      "Some release channels need repair; unaffected builds were dispatched.",
+    );
+}
+
+if (
+  process.argv[1] &&
+  NodePath.resolve(process.argv[1]) === NodeURL.fileURLToPath(import.meta.url)
+) {
+  const action = process.argv[2];
+  if (action === "sync") await sync();
+  else if (action === "prepare") await prepare();
+  else throw new Error("Usage: node .github/scripts/fork-maintenance.mjs <sync|prepare>");
+}

@@ -1,0 +1,80 @@
+name: Fork maintenance
+run-name: Sync upstream and maintain Chinese desktop builds
+
+on:
+  schedule:
+    - cron: "17 */6 * * *"
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      rebuild:
+        description: Rebuild the current stable and nightly even if already published
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: fork-maintenance
+  cancel-in-progress: false
+
+jobs:
+  maintain:
+    if: github.repository == 'rockey2020/t3code'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      REBUILD: ${{ inputs.rebuild || false }}
+      NODE_OPTIONS: --max-old-space-size=4096
+      pnpm_config_ignore_scripts: "true"
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: main
+          fetch-depth: 0
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+      - name: Test maintenance release selection
+        run: node --test .github/scripts/fork-maintenance.node-test.mjs scripts/i18n-upstream.node-test.mjs
+      - name: Merge upstream without discarding source conflicts
+        id: sync
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node .github/scripts/fork-maintenance.mjs sync
+      - name: Setup dependencies
+        uses: ./.github/actions/setup-ci-deps
+      - name: Ensure Electron runtime for focused checks
+        run: vp run --filter @t3tools/desktop ensure:electron
+      - name: Install browser test runtime
+        run: node apps/web/node_modules/playwright/cli.js install --with-deps --only-shell chromium
+      - name: Verify localization exports
+        run: node scripts/i18n-export.ts --check
+      - name: Scan untranslated strings
+        run: node scripts/i18n-untranslated.ts
+      - name: Check dependency upgrade transactions
+        run: node --test scripts/fork-upgrade-dependencies.node-test.mjs
+      - name: Upgrade compatible dependencies and roll back failures
+        run: node scripts/fork-upgrade-dependencies.mjs --apply --report fork-dependency-report.json --verify "vp run check:changed --concurrency 1 && vp run build:desktop:bundle"
+      - name: Validate changed source before publishing it
+        env:
+          BASE: ${{ github.event_name == 'push' && github.event.before || steps.sync.outputs.original }}
+        run: vp run check:changed "$BASE" --concurrency 1
+      - name: Publish validated source and start tagged builds
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node .github/scripts/fork-maintenance.mjs prepare
+      - name: Save maintenance reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: fork-maintenance-reports
+          path: |
+            fork-dependency-report.json
+            fork-maintenance-report.json
+          if-no-files-found: ignore
+          retention-days: 30

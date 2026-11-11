@@ -34,9 +34,26 @@ export function hasAvailableCompactionProvider(input: {
   );
 }
 
-export function formatContextWindowCompactionMessage(autoCompactThreshold?: number | null): string {
+type CompactionMessage =
+  | "Compacts automatically at about {tokens} tokens."
+  | "Context compacts automatically when needed.";
+type TranslateCompactionMessage = (
+  key: CompactionMessage,
+  params?: Readonly<Record<string, string | number>>,
+) => string;
+const englishCompactionMessage: TranslateCompactionMessage = (key, params) =>
+  key.replace(/\{(\w+)\}/g, (placeholder, name: string) =>
+    params && Object.hasOwn(params, name) ? String(params[name]) : placeholder,
+  );
+
+export function formatContextWindowCompactionMessage(
+  autoCompactThreshold?: number | null,
+  t: TranslateCompactionMessage = englishCompactionMessage,
+): string {
   if (typeof autoCompactThreshold === "number" && autoCompactThreshold > 0) {
-    return `Compacts automatically at about ${autoCompactThreshold.toLocaleString("en-US")} tokens.`;
+    return t("Compacts automatically at about {tokens} tokens.", {
+      tokens: autoCompactThreshold.toLocaleString("en-US"),
+    });
   }
-  return "Context compacts automatically when needed.";
+  return t("Context compacts automatically when needed.");
 }

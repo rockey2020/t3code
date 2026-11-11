@@ -172,7 +172,7 @@ const {
 }));
 
 vi.mock("electron", () => ({
-  app: { getPath: vi.fn() },
+  app: { getPath: vi.fn(), getPreferredSystemLanguages: () => ["en-US"] },
   BrowserWindow: browserWindowConstructor,
   // oxlint-disable-next-line typescript/no-extraneous-class -- This constructor-only mock implements the browser ClipboardItem API.
   ClipboardItem: class {

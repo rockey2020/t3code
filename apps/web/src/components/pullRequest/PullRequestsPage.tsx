@@ -29,6 +29,7 @@ import {
   mergePullRequestDiffStats,
   pullRequestDiffStatKey,
   pullRequestEntryKey,
+  pullRequestListErrorPlacement,
   rankPullRequestMatches,
   pullRequestStatsRefreshBatches,
   pullRequestStatsRequestBatches,
@@ -78,9 +79,11 @@ import { PullRequestListEmptyState } from "./PullRequestListEmptyState";
 import { PullRequestListGhost } from "./PullRequestGhosts";
 import { type PullRequestRowTarget } from "./PullRequestRow";
 import { PullRequestsUnavailableState } from "./PullRequestsUnavailableState";
+import { pullRequestUiMessages, translatePullRequestLabel } from "./pullRequestUi.messages";
 import { RightPanelTabs } from "../RightPanelTabs";
 import { isCommandPaletteOpen } from "~/commandPaletteBus";
 import { isElectron } from "~/env";
+import { readLocale, useTranslation } from "~/i18n/useTranslation";
 import { resolveShortcutCommand, shortcutLabelForCommand } from "~/keybindings";
 import { registerCommands } from "~/shortcuts/dispatcher";
 import { isTerminalFocused } from "~/lib/terminalFocus";
@@ -148,6 +151,7 @@ const EMPTY_PREVIEW_DESKTOP_STATE = {};
 const EMPTY_TERMINAL_LABELS = new Map<string, string>();
 const EMPTY_PENDING_SURFACES = new Set<string>();
 export function PullRequestsPage() {
+  const t = useTranslation(pullRequestUiMessages);
   const search = useSearch({ from: "/_chat/pull-requests" });
   const sort = search.sort ?? "ready";
   const statsPolicy: PullRequestStatsPolicy =
@@ -1153,7 +1157,7 @@ export function PullRequestsPage() {
       rightPanelAvailable={rightPanelAvailable}
       rightPanelOpen={rightPanelState.isOpen}
       rightPanelShortcutLabel={shortcutLabelForCommand(keybindings, "rightPanel.toggle")}
-      rightPanelUnavailableLabel="Select a pull request first"
+      rightPanelUnavailableLabel={t("Select a pull request first")}
       onToggleTerminal={() => undefined}
       onToggleRightPanel={toggleRightPanel}
     />
@@ -1172,6 +1176,11 @@ export function PullRequestsPage() {
       {panelToggleControls}
     </div>
   );
+  const errorPlacement = pullRequestListErrorPlacement({
+    error: listQuery.error,
+    answered: listQuery.data !== null,
+    shownCount,
+  });
   const carriedToNothing =
     shownCount === 0 &&
     typedQuery.length === 0 &&
@@ -1179,15 +1188,15 @@ export function PullRequestsPage() {
   const listBody = (
     <>
       {!capabilityKnown ? (
-        <PullRequestListGhost rows={7} caption="Loading pull requests…" />
+        <PullRequestListGhost rows={7} caption={t("Loading pull requests…")} />
       ) : !pullRequestsSupported ? (
         <PullRequestsUnavailableState
-          title="Pull requests unavailable"
-          error="Update your T3 Code servers to browse pull requests."
+          title={t("Pull requests unavailable")}
+          error={t("Update your T3 Code servers to browse pull requests.")}
         />
       ) : firstLoad ? (
-        <PullRequestListGhost rows={7} caption="Loading pull requests…" />
-      ) : listQuery.error && shownCount === 0 ? (
+        <PullRequestListGhost rows={7} caption={t("Loading pull requests…")} />
+      ) : listQuery.error && errorPlacement === "page" ? (
         <PullRequestsUnavailableState
           error={listQuery.error}
           refreshing={listQuery.isPending}
@@ -1232,11 +1241,15 @@ export function PullRequestsPage() {
         />
       )}
 
-      {listQuery.error && shownCount > 0 ? (
+      {listQuery.error && errorPlacement === "banner" ? (
         <div className="flex items-center justify-between gap-3 rounded-lg border border-warning/30 bg-warning-surface px-3 py-2 text-xs">
-          <span>{listQuery.error} Showing the last pull requests loaded.</span>
+          <span>
+            {shownCount > 0
+              ? t("{error} Showing the last pull requests loaded.", { error: listQuery.error })
+              : listQuery.error}
+          </span>
           <Button size="xs" variant="outline" onClick={() => listQuery.refresh()}>
-            Retry
+            {t("Retry")}
           </Button>
         </div>
       ) : null}
@@ -1245,7 +1258,7 @@ export function PullRequestsPage() {
           {loadingMore ? (
             <span className="flex items-center gap-2">
               <Spinner aria-hidden size="sm" />
-              {sentCursors === null ? "Updating pull requests" : "Loading more"}
+              {sentCursors === null ? t("Updating pull requests") : t("Loading more")}
             </span>
           ) : canContinue || pageSize < MAX_PAGE_SIZE ? (
             <Button
@@ -1254,10 +1267,10 @@ export function PullRequestsPage() {
               onClick={loadMore}
               disabled={listQuery.isPending || showingCarried}
             >
-              Load more pull requests
+              {t("Load more pull requests")}
             </Button>
           ) : (
-            <span>Narrow your search to find more pull requests.</span>
+            <span>{t("Narrow your search to find more pull requests.")}</span>
           )}
         </div>
       ) : null}
@@ -1265,7 +1278,7 @@ export function PullRequestsPage() {
   );
   const hostEntries = hosts.length > 0 ? hosts : expectedHosts;
   const hostMenuOptions: ReadonlyArray<PullRequestFilterOption<string>> = [
-    { value: "", label: "All", Icon: Plug2Icon },
+    { value: "", label: t("All"), Icon: Plug2Icon },
     ...hostEntries.map((entry) => {
       const summary = hosts.find((host) => host.host === entry.host);
       return {
@@ -1274,12 +1287,12 @@ export function PullRequestsPage() {
         Icon: getSourceControlPresentationForKind(entry.kind).Icon,
         ...(summary === undefined || summary.configured
           ? {}
-          : { unavailable: summary.detail ?? "This host could not be read." }),
+          : { unavailable: summary.detail ?? t("This host could not be read.") }),
       };
     }),
   ];
   const serverMenuOptions: ReadonlyArray<PullRequestFilterOption<string>> = [
-    { value: "", label: "All servers", Icon: LayersIcon },
+    { value: "", label: t("All servers"), Icon: LayersIcon },
     ...capableEnvironments.map((environment) => ({
       value: environment.environmentId,
       label: environment.label,
@@ -1288,9 +1301,9 @@ export function PullRequestsPage() {
   ];
   const sortMenu = (
     <PullRequestCompactFilterMenu
-      label="Sort pull requests"
+      label={t("Sort pull requests")}
       triggerIcon={<ArrowDownUpIcon aria-hidden className="size-4" />}
-      triggerLabel="Sort"
+      triggerLabel={t("Sort")}
       outlined
       value={sort}
       options={SORT_OPTIONS}
@@ -1436,20 +1449,23 @@ export function PullRequestsPage() {
     const { shortLabel, singular } = (
       sourceControlClients.findByChangeRequestUrl(url) ?? sourceControlClients.get(undefined)
     ).changeRequest;
-    void writeTextToClipboard(url, `${singular} link`).then(
+    void writeTextToClipboard(
+      url,
+      t("{kind} link", { kind: translatePullRequestLabel(singular, readLocale()) }),
+    ).then(
       (didCopy) => {
         if (didCopy)
           toastManager.add({
             type: "success",
-            title: `${shortLabel} link copied`,
+            title: t("{label} link copied", { label: shortLabel }),
             description: url,
           });
       },
       (error) => {
         toastManager.add({
           type: "error",
-          title: `Failed to copy ${shortLabel} link`,
-          description: error instanceof Error ? error.message : "An error occurred.",
+          title: t("Failed to copy {label} link", { label: shortLabel }),
+          description: error instanceof Error ? error.message : t("An error occurred."),
         });
       },
     );

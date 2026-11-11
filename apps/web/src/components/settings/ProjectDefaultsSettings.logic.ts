@@ -1,12 +1,14 @@
 import type { ModelSelection, ProjectId, ServerProvider } from "@t3tools/contracts";
 import type { UnifiedSettings } from "@t3tools/contracts/settings";
 
+import { translateNow } from "../../i18n/useTranslation";
 import { resolveEffectiveDefaultModelSelection } from "../../modelSelection";
 import {
   resolveDefaultProviderModelSelection,
   resolveProjectDefaultProviderModelSelection,
   type ProviderInstanceEntry,
 } from "../../providerInstances";
+import { settingsCodeMessages } from "./settingsCode.messages";
 
 export interface DefaultModelSettingsPresentation {
   readonly selection: ModelSelection | null;
@@ -52,7 +54,18 @@ export function resolveDefaultModelSettingsPresentation(input: {
 }
 
 function providerNote(entry: ProviderInstanceEntry | undefined): string {
-  if (!entry) return "This provider is not available on this environment.";
-  if (!entry.enabled) return `${entry.displayName} is turned off.`;
-  return `${entry.displayName} is unavailable.`;
+  if (!entry) {
+    return translateNow(
+      settingsCodeMessages,
+      "This provider is not available on this environment.",
+    );
+  }
+  if (!entry.enabled) {
+    return translateNow(settingsCodeMessages, "{provider} is turned off.", {
+      provider: entry.displayName,
+    });
+  }
+  return translateNow(settingsCodeMessages, "{provider} is unavailable.", {
+    provider: entry.displayName,
+  });
 }

@@ -1,0 +1,7 @@
+{
+  "repository": "rockey2020/t3code",
+  "repositoryId": 1454133935,
+  "upstream": "pingdotgg/t3code",
+  "branch": "main",
+  "desktopTargets": ["mac-arm64", "win-x64"]
+}

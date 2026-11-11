@@ -6,6 +6,7 @@ import { Atom, AtomRegistry } from "effect/reactivity";
 import { expect, it, vi } from "vite-plus/test";
 
 import { fakeTimers, stubGlobal } from "../../test/render";
+import { LOCALE_STORAGE_KEY } from "../i18n/locale";
 import { RELEASED_COMPLETION_GRACE_MS } from "./ThreadNotificationCoordinator.logic";
 
 const state = vi.hoisted(() => ({
@@ -242,6 +243,30 @@ it.each(["hasPendingApprovals", "hasPendingUserInput"] as const)(
   },
 );
 
+it("titles notifications and the open action in the interface language", async () => {
+  await using app = setup();
+  localStorage.setItem(LOCALE_STORAGE_KEY, "zh-CN");
+  await using _locale = {
+    [Symbol.asyncDispose]: async () => localStorage.removeItem(LOCALE_STORAGE_KEY),
+  };
+  app.start();
+  state.shells.set("one", shell({ hasPendingUserInput: true }));
+  expect(TestNotification.sent.map((sent) => sent.title)).toEqual(["需要输入"]);
+
+  focused = true;
+  state.inApp = true;
+  state.shells.set("two", shell({ hasPendingApprovals: true }));
+  const toast = state.toast.mock.calls[0]![0] as {
+    title: string;
+    actionProps: { children: string; onClick: () => void };
+  };
+  expect([toast.title, toast.actionProps.children]).toEqual(["需要批准", "打开会话"]);
+  toast.actionProps.onClick();
+  expect(state.navigate).toHaveBeenCalledWith({
+    to: "/$environmentId/$threadId",
+    params: { environmentId: EnvironmentId.make("two"), threadId: "thread" },
+  });
+});
 it.each(["hasPendingApprovals", "hasPendingUserInput"] as const)(
   "notifies again when a new %s request replaces the pending one in the same run",
   async (flag) => {

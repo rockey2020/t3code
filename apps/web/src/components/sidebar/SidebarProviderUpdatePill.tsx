@@ -1,3 +1,4 @@
+import { useLocale, useTranslation } from "~/i18n/useTranslation";
 import { Spinner } from "~/components/ui/spinner";
 import { useNavigate } from "@tanstack/react-router";
 import { useAtomValue } from "@effect/atom-react";
@@ -11,6 +12,7 @@ import {
   type ProviderUpdateSidebarPillView,
 } from "../ProviderUpdateLaunchNotification.logic";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { sidebarUiMessages, translateSidebarLabel } from "./sidebarUi.messages";
 
 // Matches the pill's `duration-180` class.
 const PROVIDER_UPDATE_PILL_EXIT_MS = 180;
@@ -43,6 +45,8 @@ function latestProviderCheckedAt(
 }
 
 export function SidebarProviderUpdatePill() {
+  const t = useTranslation(sidebarUiMessages);
+  const locale = useLocale();
   const navigate = useNavigate();
   const providers = useAtomValue(primaryServerProvidersAtom);
   const [dismissedKeys, setDismissedKeys] = useState<ReadonlySet<string>>(() => new Set());
@@ -168,7 +172,7 @@ export function SidebarProviderUpdatePill() {
           render={
             <button
               type="button"
-              aria-label={displayedView.description}
+              aria-label={translateSidebarLabel(displayedView.description, locale)}
               data-provider-update-main
               className="relative z-[1] flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 text-left"
               onClick={openProviderSettings}
@@ -182,11 +186,15 @@ export function SidebarProviderUpdatePill() {
               ) : (
                 <DownloadIcon className="size-3.5 shrink-0" />
               )}
-              <span className="min-w-0 wrap-break-word">{displayedView.title}</span>
+              <span className="min-w-0 wrap-break-word">
+                {translateSidebarLabel(displayedView.title, locale)}
+              </span>
             </button>
           }
         />
-        <TooltipPopup side="top">{displayedView.description}</TooltipPopup>
+        <TooltipPopup side="top">
+          {translateSidebarLabel(displayedView.description, locale)}
+        </TooltipPopup>
       </Tooltip>
       {displayedView.dismissible && (
         <Tooltip>
@@ -194,7 +202,7 @@ export function SidebarProviderUpdatePill() {
             render={
               <button
                 type="button"
-                aria-label="Dismiss provider update notice"
+                aria-label={t("Dismiss provider update notice")}
                 className="relative z-[1] mr-1 flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-md opacity-70 outline-none hover:opacity-100 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
                 onClick={() => startExit(displayedView.key, null, displayedView.key)}
               >
@@ -202,7 +210,7 @@ export function SidebarProviderUpdatePill() {
               </button>
             }
           />
-          <TooltipPopup side="top">Dismiss until provider status changes</TooltipPopup>
+          <TooltipPopup side="top">{t("Dismiss until provider status changes")}</TooltipPopup>
         </Tooltip>
       )}
     </div>

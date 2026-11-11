@@ -40,6 +40,8 @@ import {
   countQuestionRequestAttachments,
   openQuestionAttachmentDraft,
 } from "../../questionAttachments";
+import { readLocale, translateNow } from "~/i18n/useTranslation";
+import { desktopUiMessages, translateDesktopLabel } from "./desktopUi.messages";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 
 type CaptureTarget = DraftId | ScopedThreadRef;
@@ -374,8 +376,14 @@ export function SnapShotCoordinator() {
               "missing-project",
               stackedThreadToast({
                 type: "error",
-                title: "Snapshot taken, but no project is available",
-                description: "Add a project, then capture the window again.",
+                title: translateNow(
+                  desktopUiMessages,
+                  "Snapshot taken, but no project is available",
+                ),
+                description: translateNow(
+                  desktopUiMessages,
+                  "Add a project, then capture the window again.",
+                ),
               }),
             );
             continue;
@@ -398,9 +406,11 @@ export function SnapShotCoordinator() {
               "delivery",
               stackedThreadToast({
                 type: "error",
-                title: "Snapshot failed",
+                title: translateNow(desktopUiMessages, "Snapshot failed"),
                 description: `Capture ${item.id}: ${
-                  error instanceof Error ? error.message : "Try the capture again."
+                  error instanceof Error
+                    ? translateDesktopLabel(error.message, readLocale())
+                    : translateNow(desktopUiMessages, "Try the capture again.")
                 }`,
               }),
             );
@@ -414,8 +424,11 @@ export function SnapShotCoordinator() {
         toastManager.add(
           stackedThreadToast({
             type: "error",
-            title: "Snapshot failed",
-            description: error instanceof Error ? error.message : "Try the capture again.",
+            title: translateNow(desktopUiMessages, "Snapshot failed"),
+            description:
+              error instanceof Error
+                ? translateDesktopLabel(error.message, readLocale())
+                : translateNow(desktopUiMessages, "Try the capture again."),
           }),
         );
       })
@@ -483,8 +496,11 @@ export function SnapShotCoordinator() {
             toastManager.add(
               stackedThreadToast({
                 type: "error",
-                title: "Snapshot failed",
-                description: state.message ?? "Try the capture again.",
+                title: translateNow(desktopUiMessages, "Snapshot failed"),
+                description: translateDesktopLabel(
+                  state.message ?? translateNow(desktopUiMessages, "Try the capture again."),
+                  readLocale(),
+                ),
               }),
             );
           });

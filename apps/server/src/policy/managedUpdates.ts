@@ -1,3 +1,4 @@
+import { APP_UPDATES_ENABLED, APP_UPDATES_DISABLED_REASON } from "@t3tools/shared/appUpdatePolicy";
 import {
   managedNightlyDeniedMessage,
   managedUpdatesMessage,
@@ -25,6 +26,7 @@ export function managedUpdateRefusal(
   document: ManagedPolicyDocument | undefined,
   targetChannel?: CliReleaseChannel,
 ): string | undefined {
+  if (!APP_UPDATES_ENABLED) return APP_UPDATES_DISABLED_REASON;
   const updates = document?.limits?.updates;
   if (document === undefined || updates === undefined) return undefined;
   if (updates.mode === "off") return managedUpdatesMessage(document.organization);

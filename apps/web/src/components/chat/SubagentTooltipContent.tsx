@@ -1,3 +1,6 @@
+import { translateThreadRuntimeLabel } from "./threadRuntimeLabels";
+import { useTranslation } from "~/i18n/useTranslation";
+import { timelineUiMessages } from "./timelineUi.messages";
 import type {
   OrchestrationV2ThreadShell,
   OrchestrationV2TurnItemStatus,
@@ -50,6 +53,7 @@ export function SubagentTooltipContent(props: {
   result?: string | null | undefined;
   progress?: string | null | undefined;
 }) {
+  const t = useTranslation(timelineUiMessages);
   const childSelection =
     props.modelSelection ??
     (props.origin === "app_owned" ? props.childThread?.modelSelection : undefined);
@@ -136,7 +140,9 @@ export function SubagentTooltipContent(props: {
         )}
         <span className="inline-flex min-w-0 items-center gap-1 text-foreground/75">
           <span className="min-w-0 truncate">
-            {showInstanceBadge ? `${modelLabel} · ${entry.displayName}` : modelLabel}
+            {showInstanceBadge
+              ? `${translateThreadRuntimeLabel(modelLabel)} · ${entry.displayName}`
+              : translateThreadRuntimeLabel(modelLabel)}
           </span>
           {effort || speed?.speedIcon ? (
             <span className="inline-flex shrink-0 items-center gap-1">
@@ -163,7 +169,7 @@ export function SubagentTooltipContent(props: {
           )}
         >
           <StatusIcon aria-hidden className="size-3 shrink-0" />
-          {props.status.replaceAll("_", " ")}
+          {t(`${props.status}@@status`)}
         </span>
         {props.elapsed}
       </div>

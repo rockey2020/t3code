@@ -1,3 +1,6 @@
+import { useLocalizedSetting } from "./useLocalizedSetting";
+import { useTranslation } from "~/i18n/useTranslation";
+import { settingsDetailUiMessages } from "./settingsDetailUi.messages";
 import { useAuth } from "@clerk/react";
 import { Link } from "@tanstack/react-router";
 import { managedCapabilityDenial } from "@t3tools/contracts";
@@ -8,16 +11,16 @@ import { Button } from "../ui/button";
 import { Switch } from "../ui/switch";
 import { ScopedSwitch } from "./ScopedSwitch";
 import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";
-import { searchableSetting } from "./settingsSearch";
 import { useScopedSettings, useUpdateScopedSettings } from "./useScopedSettings";
 import { useOptionalSettingsScope, useSettingsScope } from "./SettingsScopeContext";
 import { firstManagedDenial, usePrimaryManagedPolicy } from "~/state/managedPolicy";
 
 /** Features still settling in. */
 export function LabsSettingsPanel() {
+  const t = useTranslation(settingsDetailUiMessages);
   return (
     <SettingsPageContainer>
-      <SettingsSection id="beta" title="Beta">
+      <SettingsSection id="beta" title={t("Beta")}>
         <BoringSidebarRow />
         {/* Clerk is only mounted when this build has T3 Connect. */}
         {hasCloudPublicConfig() ? <GuestLinksRowWithSignIn /> : <GuestLinksRow />}
@@ -31,17 +34,22 @@ export function LabsSettingsPanel() {
 }
 
 function BoringSidebarRow() {
+  const t = useTranslation(settingsDetailUiMessages);
+  const localizedSetting = useLocalizedSetting();
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
   return (
     <SettingsRow
-      {...searchableSetting("boring-sidebar")}
-      description="Group sidebar threads into project folders. Pinned threads stay on top, and Snoozed and Settled stay below the folders."
+      {...localizedSetting("boring-sidebar")}
+      title={t("Boring sidebar (group by project)")}
+      description={t(
+        "Group sidebar threads into project folders. Pinned threads stay on top, and Snoozed and Settled stay below the folders.",
+      )}
       control={
         <Switch
           checked={settings.boringSidebarEnabled}
           onCheckedChange={(checked) => updateSettings({ boringSidebarEnabled: Boolean(checked) })}
-          aria-label="Boring sidebar (group by project)"
+          aria-label={t("Boring sidebar (group by project)")}
         />
       }
     >
@@ -55,20 +63,24 @@ function BoringSidebarRow() {
 }
 
 function BoringSidebarMultilineRow() {
+  const t = useTranslation(settingsDetailUiMessages);
+  const localizedSetting = useLocalizedSetting();
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
   return (
     <SettingsRow
-      {...searchableSetting("boring-sidebar-multiline")}
+      {...localizedSetting("boring-sidebar-multiline")}
       className="px-0 py-2 sm:px-0"
-      description="Show folder threads on two lines: the title, then the branch, pull request, and agent."
+      description={t(
+        "Show folder threads on two lines: the title, then the branch, pull request, and agent.",
+      )}
       control={
         <Switch
           checked={settings.boringSidebarMultilineRows}
           onCheckedChange={(checked) =>
             updateSettings({ boringSidebarMultilineRows: Boolean(checked) })
           }
-          aria-label="Two-line folder rows"
+          aria-label={t("Two-line folder rows")}
         />
       }
     />
@@ -77,17 +89,22 @@ function BoringSidebarMultilineRow() {
 
 /** Signed out of T3 Connect, the row offers to sign in instead of its switch. */
 function GuestLinksRowWithSignIn() {
+  const t = useTranslation(settingsDetailUiMessages);
+  const localizedSetting = useLocalizedSetting();
   const { isSignedIn } = useAuth();
   const { openAuthPrompt } = useT3ConnectAuthPrompt();
   // `isSignedIn` is undefined until Clerk loads.
   if (isSignedIn !== false) return <GuestLinksRow />;
   return (
     <SettingsRow
-      {...searchableSetting("guest-links")}
-      description="Share a thread with a guest who watches it live in a browser and sends messages you approve. Sign in to T3 Connect to use guest links."
+      {...localizedSetting("guest-links")}
+      title={t("Guest links")}
+      description={t(
+        "Share a thread with a guest who watches it live in a browser and sends messages you approve. Sign in to T3 Connect to use guest links.",
+      )}
       control={
         <Button size="sm" variant="outline" onClick={openAuthPrompt}>
-          Sign in
+          {t("Sign in")}
         </Button>
       }
     />
@@ -95,6 +112,8 @@ function GuestLinksRowWithSignIn() {
 }
 
 function GuestLinksRow() {
+  const t = useTranslation(settingsDetailUiMessages);
+  const localizedSetting = useLocalizedSetting();
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
   const scope = useOptionalSettingsScope();
@@ -109,18 +128,20 @@ function GuestLinksRow() {
   return (
     <SettingsRow
       serverScoped
-      {...searchableSetting("guest-links")}
+      {...localizedSetting("guest-links")}
+      title={t("Guest links")}
       settingKeys={["guestSharingEnabled"]}
       // Turning guest links off still works without T3 Connect.
       managed={settings.guestSharingEnabled ? undefined : connectDenial}
       description={
         <>
-          Share a thread with a guest who watches it live in a browser and sends messages you
-          approve. Needs T3 Connect: sign in and link this machine in{" "}
+          {t(
+            "Share a thread with a guest who watches it live in a browser and sends messages you approve. Needs T3 Connect: sign in and link this machine in ",
+          )}
           <Link to="/settings/access" className="underline underline-offset-2">
-            Sharing & access
+            {t("Sharing & access")}
           </Link>
-          . Turning it off stops every guest link.
+          {t(". Turning it off stops every guest link.")}
         </>
       }
       control={
@@ -128,7 +149,7 @@ function GuestLinksRow() {
           settingKeys={["guestSharingEnabled"]}
           checked={settings.guestSharingEnabled}
           onCheckedChange={(checked) => updateSettings({ guestSharingEnabled: Boolean(checked) })}
-          aria-label="Guest links"
+          aria-label={t("Guest links")}
         />
       }
     />
@@ -136,21 +157,25 @@ function GuestLinksRow() {
 }
 
 function LinkedEnvironmentsRow() {
+  const t = useTranslation(settingsDetailUiMessages);
+  const localizedSetting = useLocalizedSetting();
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
   return (
     <SettingsRow
       serverScoped
-      {...searchableSetting("linked-environments-beta")}
+      {...localizedSetting("linked-environments-beta")}
+      title={t("Linked environments")}
       settingKeys={["linkedEnvironmentsEnabled"]}
       description={
         <>
-          Let agents here work on your other machines, and theirs here. Turn it on for each machine,
-          then link them in{" "}
+          {t(
+            "Let agents here work on your other machines, and theirs here. Turn it on for each machine, then link them in ",
+          )}
           <Link to="/settings/connections" className="underline underline-offset-2">
-            Connections
+            {t("Connections")}
           </Link>
-          . While off, nothing new starts over a link; running tasks finish.
+          {t(". While off, nothing new starts over a link; running tasks finish.")}
         </>
       }
       control={
@@ -160,7 +185,7 @@ function LinkedEnvironmentsRow() {
           onCheckedChange={(checked) =>
             updateSettings({ linkedEnvironmentsEnabled: Boolean(checked) })
           }
-          aria-label="Linked environments"
+          aria-label={t("Linked environments")}
         />
       }
     />
@@ -168,14 +193,18 @@ function LinkedEnvironmentsRow() {
 }
 
 function PromptSuggestionsRow() {
+  const t = useTranslation(settingsDetailUiMessages);
+  const localizedSetting = useLocalizedSetting();
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
   return (
     <SettingsRow
       serverScoped
-      {...searchableSetting("prompt-suggestions-beta")}
+      {...localizedSetting("prompt-suggestions-beta")}
       settingKeys={["promptSuggestionsEnabled"]}
-      description="Show a predicted next message in the empty composer after a Claude or Codex turn. Tab uses it. Each is an extra cached request on your plan. Needs Codex 0.165+. Claude threads update on restart."
+      description={t(
+        "Show a predicted next message in the empty composer after a Claude or Codex turn. Tab uses it. Each is an extra cached request on your plan. Needs Codex 0.165+. Claude threads update on restart.",
+      )}
       control={
         <ScopedSwitch
           settingKeys={["promptSuggestionsEnabled"]}
@@ -183,7 +212,7 @@ function PromptSuggestionsRow() {
           onCheckedChange={(checked) =>
             updateSettings({ promptSuggestionsEnabled: Boolean(checked) })
           }
-          aria-label="Suggest next prompt"
+          aria-label={t("Suggest next prompt")}
         />
       }
     />
@@ -191,16 +220,19 @@ function PromptSuggestionsRow() {
 }
 
 function SimlockHostsRow() {
+  const t = useTranslation(settingsDetailUiMessages);
+  const localizedSetting = useLocalizedSetting();
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
   return (
     <SettingsRow
       serverScoped
-      {...searchableSetting("simlock-hosts")}
+      {...localizedSetting("simlock-hosts")}
+      title={t("Simlock device hosts (alpha)")}
       settingKeys={["simlockDeviceHostsEnabled"]}
       description={
         <>
-          Let the Device panel lease simulators and emulators from your own{" "}
+          {t("Let the Device panel lease simulators and emulators from your own ")}
           <a
             href="https://incubator.callstack.com/simlock/"
             target="_blank"
@@ -209,11 +241,11 @@ function SimlockHostsRow() {
           >
             Simlock
           </a>{" "}
-          pool, added in{" "}
+          {t("pool, added in ")}
           <Link to="/settings/devices" className="underline underline-offset-2">
-            Devices
+            {t("Devices")}
           </Link>
-          . An alpha that may change or break. T3 Code never installs Simlock.
+          {t(". An alpha that may change or break. T3 Code never installs Simlock.")}
         </>
       }
       control={
@@ -223,7 +255,7 @@ function SimlockHostsRow() {
           onCheckedChange={(checked) =>
             updateSettings({ simlockDeviceHostsEnabled: Boolean(checked) })
           }
-          aria-label="Simlock device hosts"
+          aria-label={t("Simlock device hosts")}
         />
       }
     />
@@ -232,6 +264,8 @@ function SimlockHostsRow() {
 
 /** Shows only when every machine in scope is a Mac, since only macOS servers honor it. */
 function FastWorktreeCheckoutRow() {
+  const t = useTranslation(settingsDetailUiMessages);
+  const localizedSetting = useLocalizedSetting();
   const { scope, connectedEnvironments } = useSettingsScope();
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
@@ -248,15 +282,17 @@ function FastWorktreeCheckoutRow() {
   return (
     <SettingsRow
       serverScoped
-      {...searchableSetting("worktree-fast-checkout")}
+      {...localizedSetting("worktree-fast-checkout")}
       settingKeys={["fastWorktreeCheckout"]}
-      description="On a Mac, clone new worktrees from a checkout cached in the T3 home folder instead of writing every file. Uses Git’s normal checkout when it can’t. Turning it off deletes the cache."
+      description={t(
+        "On a Mac, clone new worktrees from a checkout cached in the T3 home folder instead of writing every file. Uses Git’s normal checkout when it can’t. Turning it off deletes the cache.",
+      )}
       control={
         <ScopedSwitch
           settingKeys={["fastWorktreeCheckout"]}
           checked={settings.fastWorktreeCheckout}
           onCheckedChange={(checked) => updateSettings({ fastWorktreeCheckout: Boolean(checked) })}
-          aria-label="Fast worktree checkout"
+          aria-label={t("Fast worktree checkout")}
         />
       }
     />

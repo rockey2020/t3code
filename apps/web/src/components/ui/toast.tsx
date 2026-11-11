@@ -1,3 +1,8 @@
+import { createLabelTranslator } from "../../i18n/labelTranslation";
+import { translate } from "../../i18n/locale";
+import { translateRuntimeError } from "../runtimeErrorLabels";
+import { useLocale, useTranslation } from "~/i18n/useTranslation";
+import { coreUiMessages } from "../coreUi.messages";
 import { Spinner } from "~/components/ui/spinner";
 
 import { Toast } from "@base-ui/react/toast";
@@ -102,6 +107,7 @@ function createBufferedToastManager(): BaseToastManager {
   };
 }
 
+const translateCoreLabel = createLabelTranslator(coreUiMessages);
 const toastManager = createBufferedToastManager();
 const anchoredToastManager = createBufferedToastManager();
 type ToastId = ReturnType<typeof toastManager.add>;
@@ -143,8 +149,9 @@ function handleToastDismissClick(
 }
 
 function CopyErrorButton({ text }: { text: string }) {
+  const t = useTranslation(coreUiMessages);
   const { copyToClipboard, isCopied } = useCopyToClipboard({ target: "error-message" });
-  const label = isCopied ? "Copied error" : "Copy error";
+  const label = isCopied ? t("Copied error") : t("Copy error");
 
   return (
     <Tooltip>
@@ -177,8 +184,9 @@ function ToastExpandableSection({
   labels: { expand?: string; collapse?: string };
 }) {
   const [open, setOpen] = useState(false);
-  const expandLabel = labels.expand ?? "Show details";
-  const collapseLabel = labels.collapse ?? "Hide details";
+  const t = useTranslation(coreUiMessages);
+  const expandLabel = labels.expand ?? t("Show details");
+  const collapseLabel = labels.collapse ?? t("Hide details");
 
   return (
     <div className="min-w-0">
@@ -209,6 +217,11 @@ function ToastDescriptionAndExpandable({
   toastDescription: unknown;
   toastType: unknown;
 }) {
+  const locale = useLocale();
+  const description =
+    typeof toastDescription === "string"
+      ? translateRuntimeError(toastDescription, locale)
+      : undefined;
   const expandableContent = toastData?.expandableContent;
   const labels = toastData?.expandableLabels ?? {};
   const descriptionTrigger = toastData?.expandableDescriptionTrigger ?? false;
@@ -217,22 +230,29 @@ function ToastDescriptionAndExpandable({
     errorDescriptionClampClass(toastType, toastDescription),
   );
   const [open, setOpen] = useState(false);
+  const t = useTranslation(coreUiMessages);
 
   if (!expandableContent) {
-    return <Toast.Description className={descriptionClassName} data-slot="toast-description" />;
+    return (
+      <Toast.Description className={descriptionClassName} data-slot="toast-description">
+        {description}
+      </Toast.Description>
+    );
   }
 
   if (!descriptionTrigger) {
     return (
       <>
-        <Toast.Description className={descriptionClassName} data-slot="toast-description" />
+        <Toast.Description className={descriptionClassName} data-slot="toast-description">
+          {description}
+        </Toast.Description>
         <ToastExpandableSection labels={labels}>{expandableContent}</ToastExpandableSection>
       </>
     );
   }
 
-  const expandLabel = labels.expand ?? "Show details";
-  const collapseLabel = labels.collapse ?? "Hide details";
+  const expandLabel = labels.expand ?? t("Show details");
+  const collapseLabel = labels.collapse ?? t("Hide details");
 
   const toggle = () => setOpen((v) => !v);
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
@@ -270,7 +290,9 @@ function ToastDescriptionAndExpandable({
                 "underline-offset-2 decoration-muted-foreground/60 group-hover:underline",
               )}
               data-slot="toast-description"
-            />
+            >
+              {description}
+            </Toast.Description>
           </div>
           {open ? (
             <ChevronUpIcon
@@ -344,6 +366,7 @@ function deriveToastBodyDescriptor(toast: {
 interface ToastBodyContentProps extends ToastBodyDescriptor {
   readonly actionProps: { readonly children?: ReactNode } | undefined;
   readonly toastData: ThreadToastData | undefined;
+  readonly toastTitle: ReactNode;
   readonly toastDescription: unknown;
   readonly toastType: unknown;
 }
@@ -357,9 +380,11 @@ function ToastBodyContent({
   secondaryActionVariant,
   hasTrailingControls,
   toastData,
+  toastTitle,
   toastDescription,
   toastType,
 }: ToastBodyContentProps) {
+  const locale = useLocale();
   const additionalActions = toastData?.additionalActions ?? [];
   const secondaryActionProps = toastData?.secondaryActionProps;
   const leadingIcon = toastData?.leadingIcon;
@@ -395,7 +420,16 @@ function ToastBodyContent({
               <Icon className="in-data-[type=error]:text-destructive in-data-[type=info]:text-info in-data-[type=success]:text-success in-data-[type=warning]:text-warning in-data-[type=loading]:opacity-80" />
             </div>
           ) : null}
-          <Toast.Title className="min-w-0 wrap-break-word font-medium" data-slot="toast-title" />
+          <Toast.Title className="min-w-0 wrap-break-word font-medium" data-slot="toast-title">
+            {typeof toastTitle === "string"
+              ? translateRuntimeError(
+                  translateCoreLabel(toastTitle, (key, params) =>
+                    translate(locale, coreUiMessages, key, params),
+                  ),
+                  locale,
+                )
+              : toastTitle}
+          </Toast.Title>
         </div>
         <ToastDescriptionAndExpandable
           toastData={toastData}
@@ -563,6 +597,7 @@ function ToastProvider({ children, position = "top-right", ...props }: ToastProv
 }
 
 function Toasts({ position }: { position: ToastPosition }) {
+  const t = useTranslation(coreUiMessages);
   const { toasts } = Toast.useToastManager<ThreadToastData>();
   const activeThreadRef = useActiveThreadRefFromRoute();
   const isTop = position.startsWith("top");
@@ -672,7 +707,7 @@ function Toasts({ position }: { position: ToastPosition }) {
               />
               <div className={toastCornerDismissClass}>
                 <button
-                  aria-label="Dismiss notification"
+                  aria-label={t("Dismiss notification")}
                   className={toastCornerOrbClass}
                   data-slot="toast-close"
                   onClick={() =>
@@ -699,6 +734,7 @@ function Toasts({ position }: { position: ToastPosition }) {
                   {...bodyDescriptor}
                   actionProps={toast.actionProps}
                   toastData={toast.data}
+                  toastTitle={toast.title}
                   toastDescription={toast.description}
                   toastType={toast.type}
                 />
@@ -721,6 +757,8 @@ function AnchoredToastProvider({ children, ...props }: Toast.Provider.Props) {
 }
 
 function AnchoredToasts() {
+  const locale = useLocale();
+  const t = useTranslation(coreUiMessages);
   const { toasts } = Toast.useToastManager<ThreadToastData>();
   const activeThreadRef = useActiveThreadRefFromRoute();
 
@@ -757,13 +795,19 @@ function AnchoredToasts() {
                 >
                   {tooltipStyle ? (
                     <Toast.Content className="pointer-events-auto px-2 py-1">
-                      <Toast.Title data-slot="toast-title" />
+                      <Toast.Title data-slot="toast-title">
+                        {typeof toast.title === "string"
+                          ? translateCoreLabel(toast.title, (key, params) =>
+                              translate(locale, coreUiMessages, key, params),
+                            )
+                          : toast.title}
+                      </Toast.Title>
                     </Toast.Content>
                   ) : (
                     <>
                       <div className={toastCornerDismissClass}>
                         <button
-                          aria-label="Dismiss notification"
+                          aria-label={t("Dismiss notification")}
                           className={toastCornerOrbClass}
                           data-slot="toast-close"
                           onClick={() =>
@@ -794,6 +838,7 @@ function AnchoredToasts() {
                           {...bodyDescriptor}
                           actionProps={toast.actionProps}
                           toastData={toast.data}
+                          toastTitle={toast.title}
                           toastDescription={toast.description}
                           toastType={toast.type}
                         />

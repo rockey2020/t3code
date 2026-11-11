@@ -9,6 +9,10 @@ name: Release desktop build
 on:
   workflow_call:
     secrets:
+      FORK_MACOS_CERTIFICATE_P12:
+        required: false
+      FORK_MACOS_CERTIFICATE_PASSWORD:
+        required: false
       CSC_LINK:
         required: false
       CSC_KEY_PASSWORD:
@@ -36,6 +40,10 @@ on:
       AZURE_TRUSTED_SIGNING_PUBLISHER_NAME:
         required: false
     inputs:
+      mac_self_signed:
+        required: false
+        default: false
+        type: boolean
       label:
         required: true
         type: string
@@ -571,6 +579,45 @@ jobs:
           name: cli-linux-${{ inputs.arch }}
           path: wsl-runtime
 
+      - name: Import the fixed fork macOS signing identity
+        if: inputs.platform == 'mac' && inputs.mac_self_signed
+        shell: bash
+        env:
+          FORK_MACOS_CERTIFICATE_P12: ${{ secrets.FORK_MACOS_CERTIFICATE_P12 }}
+          FORK_MACOS_CERTIFICATE_PASSWORD: ${{ secrets.FORK_MACOS_CERTIFICATE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          umask 077
+          if [[ -z "$FORK_MACOS_CERTIFICATE_P12" || -z "$FORK_MACOS_CERTIFICATE_PASSWORD" ]]; then
+            echo "The fixed fork macOS certificate secrets are required; refusing an ad-hoc build." >&2
+            exit 1
+          fi
+          signing_dir="$RUNNER_TEMP/t3-fork-macos-signing"
+          mkdir -m 700 "$signing_dir"
+          printf '%s' "$FORK_MACOS_CERTIFICATE_P12" | base64 -D > "$signing_dir/certificate.p12"
+          openssl pkcs12 -in "$signing_dir/certificate.p12" -passin env:FORK_MACOS_CERTIFICATE_PASSWORD -clcerts -nokeys -out "$signing_dir/certificate.pem"
+          export FORK_SIGNING_CERTIFICATE_PATH="$signing_dir/certificate.pem"
+          fingerprint=$(node --input-type=module <<'JS'
+          import { readFileSync } from 'node:fs';
+          import { X509Certificate } from 'node:crypto';
+          const config = JSON.parse(readFileSync('.fork/macos-signing.json', 'utf8'));
+          const actual = new X509Certificate(readFileSync(process.env.FORK_SIGNING_CERTIFICATE_PATH)).fingerprint256.replaceAll(':', '');
+          if (!/^[0-9A-F]{64}$/.test(config.certificateSha256) || actual !== config.certificateSha256) throw new Error('Fixed signing certificate fingerprint mismatch');
+          console.log(actual);
+          JS
+          )
+          keychain="$signing_dir/signing.keychain-db"
+          keychain_password=$(openssl rand -base64 32)
+          security create-keychain -p "$keychain_password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          security import "$signing_dir/certificate.p12" -k "$keychain" -P "$FORK_MACOS_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$keychain_password" "$keychain" >/dev/null
+          rm "$signing_dir/certificate.p12"
+          echo "CSC_KEYCHAIN=$keychain" >> "$GITHUB_ENV"
+          echo "T3CODE_MAC_SIGN_CERT_SHA256=$fingerprint" >> "$GITHUB_ENV"
+          echo "Fixed self-signed macOS identity imported and fingerprint checked."
+
       - name: Build desktop artifact
         shell: bash
         env:
@@ -618,7 +665,13 @@ jobs:
           }
 
           if [[ "${{ inputs.platform }}" == "mac" ]]; then
-            if has_all "$CSC_LINK" "$CSC_KEY_PASSWORD" "$APPLE_API_KEY" "$APPLE_API_KEY_ID" "$APPLE_API_ISSUER"; then
+            if [[ "${{ inputs.mac_self_signed }}" == "true" ]]; then
+              if ! has_all "${CSC_KEYCHAIN:-}" "${T3CODE_MAC_SIGN_CERT_SHA256:-}"; then
+                echo "The fixed fork signing identity was not imported." >&2
+                exit 1
+              fi
+              args+=(--mac-self-signed)
+            elif has_all "$CSC_LINK" "$CSC_KEY_PASSWORD" "$APPLE_API_KEY" "$APPLE_API_KEY_ID" "$APPLE_API_ISSUER"; then
               if ! has_all "$APPLE_TEAM_ID" "$MACOS_PROVISIONING_PROFILE"; then
                 echo "macOS signing is configured, but APPLE_TEAM_ID or MACOS_PROVISIONING_PROFILE is missing." >&2
                 exit 1
@@ -661,6 +714,21 @@ jobs:
           fi
 
           vp run dist:desktop:artifact "${args[@]}"
+
+      - name: Verify the fixed signature in both macOS packages
+        if: inputs.platform == 'mac' && inputs.mac_self_signed
+        shell: bash
+        run: node scripts/verify-macos-signing.ts --artifacts-dir release --output release/macos-signing.json
+
+      - name: Remove the temporary macOS signing keychain
+        if: always() && inputs.platform == 'mac' && inputs.mac_self_signed
+        shell: bash
+        run: |
+          signing_dir="$RUNNER_TEMP/t3-fork-macos-signing"
+          if [[ -f "$signing_dir/signing.keychain-db" ]]; then
+            security delete-keychain "$signing_dir/signing.keychain-db"
+          fi
+          rm -f "$signing_dir/certificate.p12" "$signing_dir/certificate.pem"
 
       # The CLI was submitted without waiting so Apple reviews it while the
       # desktop builds. Notarization does not change the archive bytes, but
@@ -788,6 +856,9 @@ jobs:
             "release/*.deb"
             "release/*.exe"
           )
+          if [[ "${{ inputs.platform }}" == "mac" && "${{ inputs.mac_self_signed }}" == "true" ]]; then
+            patterns+=("release/macos-signing.json")
+          fi
           # Preview builds have no publish config, so electron-builder writes
           # no feed manifest for them, but it still emits blockmaps beside the
           # installers. Neither belongs on a release no updater may follow.

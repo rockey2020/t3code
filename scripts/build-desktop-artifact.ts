@@ -40,6 +40,11 @@ import {
   findInlinedExternalPackages,
   selectCliRuntimeExternalDependencies,
 } from "./lib/cli-external-packages.ts";
+import {
+  resolveMacSelfSignedEnvironment,
+  validateSelfSignedMode,
+  verifyMacAppSignature,
+} from "./lib/mac-self-signing.ts";
 import { loadRepoEnv } from "./lib/public-config.ts";
 import { selectDesktopRuntimeExternalDependencies } from "./lib/desktop-external-packages.ts";
 import { resolveCatalogDependencies } from "./lib/resolve-catalog.ts";
@@ -184,6 +189,7 @@ interface BuildCliInput {
   readonly skipBuild: Option.Option<boolean>;
   readonly keepStage: Option.Option<boolean>;
   readonly signed: Option.Option<boolean>;
+  readonly macSelfSigned?: Option.Option<boolean>;
   readonly verbose: Option.Option<boolean>;
   readonly mockUpdates: Option.Option<boolean>;
   readonly mockUpdateServerPort: Option.Option<number>;
@@ -205,6 +211,16 @@ const getDefaultArch = Effect.fn("getDefaultArch")(function* (platform: typeof B
 
   return yield* getDefaultBuildArch(platform, config);
 });
+
+class MacSelfSigningError extends Schema.TaggedError<MacSelfSigningError>()("MacSelfSigningError", {
+  cause: Schema.Defect(),
+}) {
+  override get message(): string {
+    return "Fixed macOS certificate signing or verification failed.";
+  }
+}
+
+const macSelfSigningFailure = (cause: unknown) => new MacSelfSigningError({ cause });
 
 export class MacPasskeySigningConfigurationResolutionError extends Schema.TaggedError<MacPasskeySigningConfigurationResolutionError>()(
   "MacPasskeySigningConfigurationResolutionError",
@@ -955,6 +971,7 @@ interface ResolvedBuildOptions {
   readonly skipBuild: boolean;
   readonly keepStage: boolean;
   readonly signed: boolean;
+  readonly macSelfSigned?: boolean;
   readonly verbose: boolean;
   readonly mockUpdates: boolean;
   readonly mockUpdateServerPort: number | undefined;
@@ -1649,6 +1666,7 @@ const BuildEnvConfig = Config.all({
   skipBuild: Config.Boolean("T3CODE_DESKTOP_SKIP_BUILD").pipe(Config.withDefault(false)),
   keepStage: Config.Boolean("T3CODE_DESKTOP_KEEP_STAGE").pipe(Config.withDefault(false)),
   signed: Config.Boolean("T3CODE_DESKTOP_SIGNED").pipe(Config.withDefault(false)),
+  macSelfSigned: Config.Boolean("T3CODE_MAC_SELF_SIGNED").pipe(Config.withDefault(false)),
   verbose: Config.Boolean("T3CODE_DESKTOP_VERBOSE").pipe(Config.withDefault(false)),
   mockUpdates: Config.Boolean("T3CODE_DESKTOP_MOCK_UPDATES").pipe(Config.withDefault(false)),
   mockUpdateServerPort: Config.String("T3CODE_DESKTOP_MOCK_UPDATE_SERVER_PORT").pipe(Config.option),
@@ -1729,6 +1747,11 @@ export const resolveBuildOptions = Effect.fn("resolveBuildOptions")(function* (
   const skipBuild = resolveBooleanFlag(input.skipBuild, env.skipBuild);
   const keepStage = resolveBooleanFlag(input.keepStage, env.keepStage);
   const signed = resolveBooleanFlag(input.signed, env.signed);
+  const macSelfSigned = resolveBooleanFlag(input.macSelfSigned ?? Option.none(), env.macSelfSigned);
+  yield* Effect.try({
+    try: () => validateSelfSignedMode(platform, signed, macSelfSigned),
+    catch: macSelfSigningFailure,
+  });
   const verbose = resolveBooleanFlag(input.verbose, env.verbose);
 
   const mockUpdates = resolveBooleanFlag(input.mockUpdates, env.mockUpdates);
@@ -1755,6 +1778,7 @@ export const resolveBuildOptions = Effect.fn("resolveBuildOptions")(function* (
     skipBuild,
     keepStage,
     signed,
+    ...(macSelfSigned ? { macSelfSigned } : {}),
     verbose,
     mockUpdates,
     mockUpdateServerPort,
@@ -2778,8 +2802,19 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
     | undefined,
   wslRuntimeBundled = false,
   arch?: typeof BuildArch.Type,
+  macSelfSigned = false,
 ) {
+  yield* Effect.try({
+    try: () => validateSelfSignedMode(platform, signed, macSelfSigned),
+    catch: macSelfSigningFailure,
+  });
+  if (macSelfSigned && macPasskeySigning) {
+    return yield* new MacSelfSigningError({
+      cause: "Self-signing cannot use Apple provisioning entitlements.",
+    });
+  }
   const buildConfig: Record<string, unknown> = {
+    ...(macSelfSigned ? { forceCodeSigning: true } : {}),
     afterPack: (yield* Path.Path).join(yield* RepoRoot, "scripts/prepare-server-compile-cache.cjs"),
     appId: DESKTOP_APP_ID,
     productName: resolveDesktopProductName(version),
@@ -2872,6 +2907,24 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
         },
       ],
       ...(signed ? { sign: path.join(repoRoot, "scripts/sign-macos.ts") } : {}),
+      ...(macSelfSigned
+        ? {
+            // The custom hook replaces this dispatch identity with the pinned certificate; it never signs ad hoc.
+            identity: "-",
+            sign: path.join(repoRoot, "scripts/sign-macos-self-signed.ts"),
+            notarize: false,
+            hardenedRuntime: true,
+            preAutoEntitlements: false,
+            entitlements: path.join(
+              repoRoot,
+              "apps/desktop/resources/entitlements.mac.self-signed.plist",
+            ),
+            entitlementsInherit: path.join(
+              repoRoot,
+              "apps/desktop/resources/entitlements.mac.self-signed.plist",
+            ),
+          }
+        : {}),
       ...(macPasskeySigning
         ? {
             entitlements: macPasskeySigning.entitlementsPath,
@@ -3899,6 +3952,7 @@ const buildDesktopArtifactUnlocked = Effect.fn("buildDesktopArtifactUnlocked")(f
         : undefined,
       bundlesWslRuntime({ platform: options.platform, runtimeArchivePath: options.wslRuntime }),
       options.arch,
+      options.macSelfSigned,
     ),
     dependencies: stageDependencies,
     devDependencies: {
@@ -3992,6 +4046,12 @@ const buildDesktopArtifactUnlocked = Effect.fn("buildDesktopArtifactUnlocked")(f
     delete buildEnv.CSC_LINK;
     delete buildEnv.CSC_KEY_PASSWORD;
   }
+  if (options.macSelfSigned) {
+    yield* Effect.try({
+      try: () => resolveMacSelfSignedEnvironment(buildEnv),
+      catch: macSelfSigningFailure,
+    });
+  }
   if (!options.signed) {
     buildEnv.CSC_IDENTITY_AUTO_DISCOVERY = "false";
     delete buildEnv.CSC_LINK;
@@ -4054,6 +4114,23 @@ const buildDesktopArtifactUnlocked = Effect.fn("buildDesktopArtifactUnlocked")(f
       distPath: stageDistDir,
       platform: options.platform,
       arch: options.arch,
+    });
+  }
+
+  if (options.macSelfSigned) {
+    const { certificateSha256 } = yield* Effect.try({
+      try: () => resolveMacSelfSignedEnvironment(buildEnv),
+      catch: macSelfSigningFailure,
+    });
+    const appDirectory = options.arch === "x64" ? "mac" : `mac-${options.arch}`;
+    const appPath = path.join(
+      stageDistDir,
+      appDirectory,
+      `${resolveDesktopProductName(appVersion)}.app`,
+    );
+    yield* Effect.try({
+      try: () => verifyMacAppSignature(appPath, certificateSha256),
+      catch: macSelfSigningFailure,
     });
   }
 
@@ -4176,6 +4253,12 @@ const buildDesktopArtifactCli = Command.make("build-desktop-artifact", {
   signed: Flag.Boolean("signed").pipe(
     Flag.withDescription(
       "Enable signing/notarization discovery; Windows uses Azure Trusted Signing (env: T3CODE_DESKTOP_SIGNED).",
+    ),
+    Flag.optional,
+  ),
+  macSelfSigned: Flag.Boolean("mac-self-signed").pipe(
+    Flag.withDescription(
+      "Sign macOS with the fixed certificate in CSC_KEYCHAIN (env: T3CODE_MAC_SELF_SIGNED).",
     ),
     Flag.optional,
   ),

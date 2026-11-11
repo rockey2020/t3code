@@ -40,7 +40,7 @@ jobs:
             !/.repos/
           sparse-checkout-cone-mode: false
       - name: Test maintenance release selection
-        run: node --test .github/scripts/fork-maintenance.node-test.mjs scripts/i18n-upstream.node-test.mjs
+        run: node --test .github/scripts/fork-maintenance.node-test.mjs .github/scripts/fork-signing.node-test.mjs scripts/i18n-upstream.node-test.mjs
       - name: Merge upstream without discarding source conflicts
         id: sync
         env:

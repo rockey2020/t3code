@@ -1,0 +1,8 @@
+{
+  "mode": "self-signed",
+  "certificateSha256": "08A07C3F1FFA9CBE3A7AFE0CD040DC35500DE70AEDE97F6242BDA255D25D6F53",
+  "subject": "CN=T3 Code Fork Signing (rockey2020), O=rockey2020 t3code fork",
+  "notAfter": "2036-11-08T18:13:48Z",
+  "certificateFile": ".fork/macos-signing-certificate.pem",
+  "notarized": false
+}

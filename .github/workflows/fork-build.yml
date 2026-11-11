@@ -70,12 +70,14 @@ jobs:
       - uses: ./.github/actions/setup-ci-deps
         with:
           install-args: --filter=t3... --filter=@t3tools/web... --filter=@t3tools/desktop... --filter=@t3tools/scripts...
+      - name: Check fixed macOS signing publication gates
+        run: node --test .github/scripts/fork-signing.node-test.mjs
       - name: Check localization catalogs
         run: node scripts/i18n-export.ts --check
       - name: Check Chinese localization and disabled updates
         run: |
           set -euo pipefail
-          (cd scripts && vp test run --config ../vite.config.ts --dir . fork-i18n.test.ts --maxWorkers=1)
+          (cd scripts && vp test run --config ../vite.config.ts --dir . fork-i18n.test.ts mac-self-signing.test.ts build-desktop-artifact.test.ts --maxWorkers=1)
           vp run --filter @t3tools/desktop ensure:electron
           (cd apps/desktop && vp test run src/window/menuLocalization.test.ts src/updates/forkUpdatePolicy.test.ts --maxWorkers=1)
           (cd apps/server && vp test run src/cloud/forkUpdatePolicy.test.ts src/environment/ServerEnvironment.test.ts --maxWorkers=1)
@@ -162,7 +164,11 @@ jobs:
     name: macOS ARM64
     needs: bundle
     uses: ./.github/workflows/release-desktop.yml
+    secrets:
+      FORK_MACOS_CERTIFICATE_P12: ${{ secrets.FORK_MACOS_CERTIFICATE_P12 }}
+      FORK_MACOS_CERTIFICATE_PASSWORD: ${{ secrets.FORK_MACOS_CERTIFICATE_PASSWORD }}
     with:
+      mac_self_signed: true
       label: macOS arm64
       runner: macos-26
       platform: mac

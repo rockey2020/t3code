@@ -12,7 +12,9 @@
 
 上游其他工作流保存在 `.github/upstream-workflows`，不在本仓库触发。共享 `release-desktop.yml` 仅可被调用，包装步骤复用经验证的上游实现；定时同步将新的上游工作流归档，避免直接执行新增部署任务，维护修复时再验证更新。Windows 需要的 Linux x64 WSL 运行组件作为内部依赖构建，不发布独立 Linux 桌面包。
 
-安装包默认不签名、不进行 Apple 公证，不需要添加签名凭据。系统可能在首次安装时显示来源/签名提示。发布目录仅包含安装包、macOS ZIP、校验和与源码记录，不发布更新 feed。T3 Code 自身的更新检查、下载、安装和更新通道切换由共享源码策略禁用，provider CLI 的维护功能不受影响。
+macOS 安装包内的应用使用仓库固定的自签代码证书；公开证书及 SHA256 指纹位于 `.fork/macos-signing-certificate.pem` 与 `.fork/macos-signing.json`。加密 P12 和密码仅由 Actions Secrets `FORK_MACOS_CERTIFICATE_P12`、`FORK_MACOS_CERTIFICATE_PASSWORD` 提供，每次构建导入独立临时钥匙串，完成后删除。不修改系统信任库、不安装根证书、不关闭 Gatekeeper，也不每次重新生成证书。签名或指纹校验失败会停止发布，不会回退到 ad-hoc 签名。DMG 和 ZIP 中的应用都必须通过完整签名检查，发布附件 `macos-signing.json` 绑定证书指纹与两个文件的 SHA256。固定证书到期或泄露后需要明确授权轮换。
+
+自签证书不等于 Apple Developer ID，也不能通过 Apple 公证；Gatekeeper 仍可能阻止首次打开。固定签名用于保持该 fork 的签名身份和完整性，不保证消除首次安装提示或保留所有系统权限。自签模式不启用需要 Apple Team、provisioning profile 或 associated domains 的受限能力。Windows 包仍未签名。发布目录仅包含安装包、macOS ZIP、校验和、源码记录与签名验证记录，不发布更新 feed。T3 Code 自身的更新检查、下载、安装和更新通道切换由共享源码策略禁用，provider CLI 的维护功能不受影响。
 
 ## 依赖与翻译
 

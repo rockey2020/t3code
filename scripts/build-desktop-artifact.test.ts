@@ -236,6 +236,32 @@ const makeMacPayloadFixture = Effect.fn("test.makeMacPayloadFixture")(function* 
 });
 
 it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
+  it.effect("isolates fixed self-signing from Apple provisioning and notarization", () =>
+    Effect.gen(function* () {
+      const config = yield* createBuildConfig(
+        "mac",
+        "dmg",
+        "1.2.3",
+        false,
+        false,
+        undefined,
+        undefined,
+        false,
+        "arm64",
+        true,
+      );
+      const mac = config.mac as Record<string, unknown>;
+      assert.equal(mac.identity, "-");
+      assert.match(mac.sign as string, /sign-macos-self-signed\.ts$/);
+      assert.isFalse(mac.notarize);
+      assert.isTrue(mac.hardenedRuntime);
+      assert.isFalse(mac.preAutoEntitlements);
+      assert.equal(mac.entitlements, mac.entitlementsInherit);
+      assert.notProperty(mac, "provisioningProfile");
+      assert.deepEqual(mac.target, ["dmg", "zip"]);
+    }),
+  );
+
   it.effect("rejects overlapping builds from another process until restoration finishes", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;

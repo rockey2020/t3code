@@ -1,6 +1,11 @@
 import * as NodeAssert from "node:assert/strict";
 import * as NodeTest from "node:test";
-import { classifyDependency, planUpdates, runTransaction } from "./fork-upgrade-dependencies.mjs";
+import {
+  classifyDependency,
+  planUpdates,
+  runTransaction,
+  assertReleaseAgePolicy,
+} from "./fork-upgrade-dependencies.mjs";
 
 NodeTest.test(
   "protects patched packages, override edges, aliases and coupled dependency families",
@@ -72,3 +77,87 @@ NodeTest.test(
     NodeAssert.match(result.error, /peer conflict/);
   },
 );
+
+NodeTest.test(
+  "holds the editor family until the observed input-rule undo regression is migrated",
+  () => {
+    for (const name of [
+      "@tiptap/core",
+      "@tiptap/extension-bold",
+      "prosemirror-view",
+      "prosemirror-transform",
+    ]) {
+      NodeAssert.match(classifyDependency(name, "3.31.3", {}) ?? "", /Backspace.*input.rule/i);
+    }
+    const plan = planUpdates(
+      [
+        { name: "@tiptap/core", version: "3.31.3" },
+        { name: "unrelated-package", version: "1.0.0" },
+      ],
+      {},
+      { "@tiptap/core": "3.33.1", "unrelated-package": "1.0.1" },
+    );
+    NodeAssert.deepEqual(
+      plan.updates.map((item) => item.name),
+      ["unrelated-package"],
+    );
+    NodeAssert.equal(plan.held[0].latest, "3.33.1");
+  },
+);
+
+NodeTest.test("holds fresh or undated releases without blocking mature candidates", () => {
+  const now = Date.parse("2026-11-12T00:00:00Z");
+  const refs = ["fresh", "mature", "undated"].map((name) => ({ name, version: "1.0.0" }));
+  const plan = planUpdates(
+    refs,
+    {},
+    { fresh: "1.0.1", mature: "1.0.1", undated: "1.0.1" },
+    {
+      now,
+      publishedAt: { fresh: "2026-11-11T23:00:00Z", mature: "2026-11-10T00:00:00Z" },
+    },
+  );
+  NodeAssert.deepEqual(
+    plan.updates.map((item) => item.name),
+    ["mature"],
+  );
+  NodeAssert.deepEqual(
+    plan.held.map((item) => item.name),
+    ["fresh", "undated"],
+  );
+  NodeAssert.match(plan.held[0].reason, /release age/i);
+  NodeAssert.equal(plan.held[0].eligibleAfter, "2026-11-12T23:00:00.000Z");
+  NodeAssert.equal(
+    planUpdates(
+      refs.slice(0, 1),
+      { minimumReleaseAge: 30 },
+      { fresh: "1.0.1" },
+      {
+        now,
+        publishedAt: { fresh: "2026-11-11T23:00:00Z" },
+      },
+    ).updates.length,
+    1,
+  );
+});
+
+NodeTest.test("rejects install-time release-age exceptions or a weakened age floor", () => {
+  const before = { minimumReleaseAge: 1440, minimumReleaseAgeExclude: ["approved@1.0.0"] };
+  NodeAssert.doesNotThrow(() => assertReleaseAgePolicy(before, before));
+  NodeAssert.throws(
+    () =>
+      assertReleaseAgePolicy(before, {
+        ...before,
+        minimumReleaseAgeExclude: ["approved@1.0.0", "fresh@2.0.0"],
+      }),
+    /release.age/i,
+  );
+  NodeAssert.throws(
+    () => assertReleaseAgePolicy(before, { ...before, minimumReleaseAge: 0 }),
+    /release.age/i,
+  );
+  NodeAssert.throws(
+    () => assertReleaseAgePolicy(before, { ...before, minimumReleaseAgeIgnoreMissingTime: true }),
+    /release.age/i,
+  );
+});

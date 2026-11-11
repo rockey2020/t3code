@@ -29,11 +29,16 @@ export function classifyDependency(name, version, workspace) {
   ) {
     return "Explicit override must be reviewed with its dependency constraints";
   }
+  // TipTap 3.33 splits input insertion from rule conversion. Our list normalization
+  // runs between them, losing the undo state. Keep this family together until
+  // composer-block-shortcuts.test.ts passes with a coordinated migration.
+  if (/^(?:@tiptap\/|prosemirror-)/.test(name))
+    return "Temporary migration hold: Backspace no longer restores the literal marker after an input-rule conversion";
   if (coupled.test(name)) return "Coupled runtime/toolchain family requires coordinated migration";
   return null;
 }
 
-export function planUpdates(refs, workspace, latest) {
+export function planUpdates(refs, workspace, latest, age) {
   const updates = [];
   const held = [];
   for (const ref of refs) {
@@ -53,6 +58,27 @@ export function planUpdates(refs, workspace, latest) {
     const newVersion = newParts.slice(2).map(Number);
     const different = oldVersion.findIndex((part, index) => part !== newVersion[index]);
     if (different < 0 || newVersion[different] < oldVersion[different]) continue;
+    // pnpm 12 defaults to a one-day cutoff. Pre-filter direct updates so a fresh
+    // release does not roll back unrelated mature packages. Strict pnpm install
+    // still enforces the complete transitive graph and configured exceptions.
+    const minimumAge = Number(workspace.minimumReleaseAge ?? 1440);
+    if (age && minimumAge > 0) {
+      const published = Date.parse(age.publishedAt[ref.name] ?? "");
+      const eligibleAt = published + minimumAge * 60_000;
+      if (!Number.isFinite(eligibleAt) || eligibleAt > age.now) {
+        held.push({
+          ...ref,
+          latest: next,
+          reason: Number.isFinite(eligibleAt)
+            ? "Minimum release age has not elapsed"
+            : "Missing publication time; cannot verify minimum release age",
+          ...(Number.isFinite(eligibleAt)
+            ? { eligibleAfter: new Date(eligibleAt).toISOString() }
+            : {}),
+        });
+        continue;
+      }
+    }
     updates.push({
       ...ref,
       target: `${oldParts[1]}${next}`,
@@ -63,6 +89,20 @@ export function planUpdates(refs, workspace, latest) {
     });
   }
   return { updates, held };
+}
+
+export function assertReleaseAgePolicy(before, after) {
+  const approved = new Set(before.minimumReleaseAgeExclude ?? []);
+  if (
+    (after.minimumReleaseAgeExclude ?? []).some((entry) => !approved.has(entry)) ||
+    Number(after.minimumReleaseAge ?? 1440) < Number(before.minimumReleaseAge ?? 1440) ||
+    (after.minimumReleaseAgeIgnoreMissingTime === true &&
+      before.minimumReleaseAgeIgnoreMissingTime !== true)
+  ) {
+    throw new Error(
+      "Install weakened the minimum release-age policy; rolling back without adding exceptions",
+    );
+  }
 }
 
 export async function runTransaction({ snapshot, apply, verify, restore }) {
@@ -104,6 +144,11 @@ async function main() {
   const originals = new Map(paths.map((path) => [path, NodeFS.readFileSync(path, "utf8")]));
   originals.set(workspacePath, workspaceText);
   originals.set("pnpm-lock.yaml", NodeFS.readFileSync("pnpm-lock.yaml", "utf8"));
+  // Router validation/builds regenerate this tracked file. Restore it too if
+  // an upgrade fails, so a reverted router never keeps a newer generated tree.
+  const routeTree = "apps/web/src/routeTree.gen.ts";
+  if (NodeFS.existsSync(routeTree))
+    originals.set(routeTree, NodeFS.readFileSync(routeTree, "utf8"));
   const manifests = new Map(paths.map((path) => [path, JSON.parse(originals.get(path))]));
   const refs = [];
   for (const [name, version] of Object.entries(workspace.catalog ?? {}))
@@ -121,6 +166,7 @@ async function main() {
     }
   }
   const latest = {};
+  const publishedAt = {};
   const lookupFailures = [];
   // npm honors the runner's configured registry. Queries do not execute package code.
   const npm = NodeUtil.promisify(NodeChildProcess.execFile);
@@ -142,20 +188,23 @@ async function main() {
               "view",
               name,
               "dist-tags.latest",
+              "time",
               "--json",
               "--fetch-retries=1",
               "--fetch-timeout=20000",
             ],
-            { timeout: 60000, maxBuffer: 1024 * 1024 },
+            { timeout: 60000, maxBuffer: 8 * 1024 * 1024 },
           );
-          latest[name] = JSON.parse(stdout);
+          const metadata = JSON.parse(stdout);
+          latest[name] = metadata["dist-tags.latest"];
+          publishedAt[name] = metadata.time?.[latest[name]];
         } catch (error) {
           lookupFailures.push({ name, error: String(error) });
         }
       }
     }),
   );
-  const plan = planUpdates(refs, workspace, latest);
+  const plan = planUpdates(refs, workspace, latest, { publishedAt, now: Date.now() });
   const compatible = plan.updates.filter((item) => item.group === "compatible");
   const report = {
     checkedAt: new Date().toISOString(),
@@ -192,10 +241,18 @@ async function main() {
               ? doc.toString()
               : `${JSON.stringify(manifests.get(path), null, 2)}\n`,
           );
-        NodeChildProcess.execFileSync("pnpm", ["install", "--no-frozen-lockfile"], {
-          stdio: "inherit",
-          timeout: 10 * 60 * 1000,
-        });
+        NodeChildProcess.execFileSync(
+          "pnpm",
+          ["install", "--no-frozen-lockfile", "--config.minimum-release-age-strict=true"],
+          {
+            stdio: "inherit",
+            timeout: 10 * 60 * 1000,
+          },
+        );
+        assertReleaseAgePolicy(
+          workspace,
+          parseDocument(NodeFS.readFileSync(workspacePath, "utf8")).toJS(),
+        );
       },
       verify: () =>
         NodeChildProcess.execSync(verify, { stdio: "inherit", timeout: 20 * 60 * 1000 }),
@@ -212,10 +269,14 @@ async function main() {
       });
       // Restore installed state as well; failure here must block building with stale modules.
       NodeFS.writeFileSync(reportPath, `${JSON.stringify(report, null, 2)}\n`);
-      NodeChildProcess.execFileSync("pnpm", ["install", "--frozen-lockfile"], {
-        stdio: "inherit",
-        timeout: 10 * 60 * 1000,
-      });
+      NodeChildProcess.execFileSync(
+        "pnpm",
+        ["install", "--frozen-lockfile", "--config.minimum-release-age-strict=true"],
+        {
+          stdio: "inherit",
+          timeout: 10 * 60 * 1000,
+        },
+      );
     }
   }
   NodeFS.writeFileSync(reportPath, `${JSON.stringify(report, null, 2)}\n`);

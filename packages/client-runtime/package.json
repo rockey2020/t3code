@@ -581,7 +581,7 @@
     "@t3tools/source-control-core": "workspace:*",
     "@t3tools/source-control-definitions": "workspace:*",
     "effect": "catalog:",
-    "jszip": "3.10.1",
+    "jszip": "3.10.2",
     "three": "0.180.0",
     "unbash": "^5.0.0"
   },

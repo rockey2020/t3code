@@ -9,6 +9,8 @@ import {
   selectReleases,
   releaseComplete,
   auditedOverlay,
+  normalizedOverlayBase,
+  forkOverlayDiff,
   commitPreparedSource,
 } from "./fork-maintenance.mjs";
 
@@ -61,8 +63,15 @@ NodeTest.test(
       source: override.sourceCommit,
       patch: `fork-only changes since ${commit}`,
     });
-    NodeAssert.equal(auditedOverlay({ ...args, readBaseline: () => "different-upstream" }), null);
-    NodeAssert.equal(auditedOverlay({ ...args, isAncestor: () => false }), null);
+    NodeAssert.deepEqual(
+      auditedOverlay({
+        ...args,
+        readBaseline: () => "different-upstream",
+        normalize: () => "normalized-tree",
+      }),
+      { source: override.sourceCommit, patch: "fork-only changes since normalized-tree" },
+    );
+    NodeAssert.throws(() => auditedOverlay({ ...args, isAncestor: () => false }), /ancestor/);
     NodeAssert.deepEqual(
       auditedOverlay({
         ...args,
@@ -139,3 +148,125 @@ NodeTest.test(
     }
   },
 );
+
+for (const scenario of [
+  "clean",
+  "normalization-conflict",
+  "apply-conflict",
+  "unrelated-baseline",
+  "unrelated-fork",
+]) {
+  NodeTest.test(`normalized audited overlay: ${scenario}`, () => {
+    const directory = NodeFS.mkdtempSync(
+      NodePath.join(NodeOS.tmpdir(), "fork-normalized-overlay-"),
+    );
+    const run = (args, options = {}) =>
+      NodeChildProcess.execFileSync("git", args, {
+        cwd: directory,
+        encoding: "utf8",
+        stdio: ["pipe", "pipe", "pipe"],
+        env: { ...process.env, GIT_CONFIG_NOSYSTEM: "1" },
+        ...options,
+      }).trim();
+    const write = (path, value) => {
+      const target = NodePath.join(directory, path);
+      NodeFS.mkdirSync(NodePath.dirname(target), { recursive: true });
+      NodeFS.writeFileSync(target, value);
+    };
+    const commit = (message) => {
+      run(["add", "-A"]);
+      run(["commit", "-m", message]);
+      return run(["rev-parse", "HEAD"]);
+    };
+    try {
+      run(["init", "--initial-branch=upstream"]);
+      run(["config", "user.name", "Overlay test"]);
+      run(["config", "user.email", "overlay@example.invalid"]);
+      run(["config", "commit.gpgSign", "false"]);
+      write("app.txt", "tagged application\n");
+      const baseline = commit("upstream baseline");
+      run(["checkout", "-b", "fork"]);
+      write("fork.txt", "old fork fix\n");
+      write(".fork/upstream.json", JSON.stringify({ sha: baseline }));
+      if (scenario === "normalization-conflict") write("app.txt", "localized application\n");
+      const auditedFork = commit("audited fork");
+      run(["checkout", "upstream"]);
+      write("runtime-feature.txt", "new upstream runtime feature MUST NOT enter the old tag\n");
+      if (scenario === "normalization-conflict") write("app.txt", "new upstream application\n");
+      const upstream = commit("new upstream runtime feature");
+      run(["checkout", "fork"]);
+      if (scenario === "normalization-conflict") {
+        NodeAssert.throws(() => run(["merge", "--no-edit", upstream]));
+        write("app.txt", "explicit human integration resolution\n");
+        commit("human resolves overlapping upstream and fork edits");
+      } else run(["merge", "--no-edit", upstream]);
+      write("fork.txt", "new fork fix\n");
+      write(".fork/upstream.json", JSON.stringify({ sha: upstream }));
+      write(".fork/release-sources.json", "{}\n");
+      write(".github/workflows/build.yml", "name: current workflow\n");
+      write(".github/upstream-workflows/ci.yml", "name: mirrored upstream workflow\n");
+      const fork = commit("new fork-only fix and maintenance metadata");
+      run(["checkout", "--detach", baseline]);
+      write(
+        "fork.txt",
+        scenario === "apply-conflict" ? "audited stable-specific correction\n" : "old fork fix\n",
+      );
+      const source = commit("audited stable release source");
+      const args = {
+        override: { sourceCommit: source, forkCommit: auditedFork, fingerprint: "old" },
+        fingerprint: "new",
+        upstream,
+        readBaseline: () => (scenario === "unrelated-baseline" ? source : baseline),
+        isAncestor: (ref) => {
+          try {
+            run([
+              "merge-base",
+              "--is-ancestor",
+              ref,
+              scenario === "unrelated-fork" ? source : fork,
+            ]);
+            return true;
+          } catch {
+            return false;
+          }
+        },
+        normalize: (oldUpstream, oldFork) =>
+          normalizedOverlayBase({
+            run,
+            baseline: oldUpstream,
+            auditedFork: oldFork,
+            upstream,
+            fork,
+          }),
+        diff: (from) => forkOverlayDiff(run, from, fork),
+      };
+      if (["normalization-conflict", "unrelated-baseline", "unrelated-fork"].includes(scenario)) {
+        NodeAssert.throws(() => auditedOverlay(args));
+        NodeAssert.equal(run(["rev-parse", "HEAD"]), source);
+        NodeAssert.equal(run(["status", "--porcelain"]), "");
+        return;
+      }
+      const overlay = auditedOverlay(args);
+      NodeAssert.equal(overlay.source, source);
+      NodeAssert.doesNotMatch(overlay.patch, /runtime-feature|\.fork\/|\.github\//);
+      const apply = () => run(["apply", "--3way", "-"], { input: `${overlay.patch}\n` });
+      if (scenario === "apply-conflict") {
+        NodeAssert.throws(apply);
+        NodeAssert.match(run(["diff", "--name-only", "--diff-filter=U"]), /fork.txt/);
+      } else {
+        apply();
+        NodeAssert.equal(
+          NodeFS.readFileSync(NodePath.join(directory, "fork.txt"), "utf8"),
+          "new fork fix\n",
+        );
+        NodeAssert.equal(
+          NodeFS.readFileSync(NodePath.join(directory, "app.txt"), "utf8"),
+          "tagged application\n",
+        );
+      }
+      NodeAssert.equal(NodeFS.existsSync(NodePath.join(directory, "runtime-feature.txt")), false);
+    } finally {
+      NodeFS.rmSync(directory, { recursive: true, force: true });
+    }
+  });
+}

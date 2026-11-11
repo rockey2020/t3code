@@ -45,6 +45,13 @@ describe("transcript JSON projection", () => {
     },
   );
 
+  it("flushes the tokenizer at EOF instead of accepting a complete prefix", () => {
+    expect(read('{"a":1}   ', 1)).toEqual({ a: 1 });
+    for (const text of ['{"a":1', '{"a":1} "unfinished', '{"a":1} tru']) {
+      expect(read(text, 1)).toBeUndefined();
+    }
+  });
+
   it("retains the import allocation and depth limits", () => {
     const limited = createTranscriptJsonReader(
       () => {

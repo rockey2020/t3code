@@ -32,7 +32,6 @@ interface FindRow {
 interface FindPayload extends FindRow {
   readonly payload: string;
   readonly entryId: string;
-  readonly runId: OrchestrationV2TurnItem["runId"];
   readonly type: OrchestrationV2TurnItem["type"];
 }
 interface FindDocument extends FindRow {
@@ -214,12 +213,10 @@ export const makeThreadFind = Effect.fn("makeThreadFind")(function* (
       turn_item_id: string;
       payload_json: string;
       entry_id: string;
-      run_id: OrchestrationV2TurnItem["runId"];
       item_type: OrchestrationV2TurnItem["type"];
     }>`
       SELECT item.thread_id, item.turn_item_id, item.payload_json,
         COALESCE(json_extract(item.payload_json, '$.messageId'), item.turn_item_id) AS entry_id,
-        json_extract(item.payload_json, '$.runId') AS run_id,
         json_extract(item.payload_json, '$.type') AS item_type
       FROM orchestration_v2_projection_turn_items AS item
       JOIN json_each(${sources}) AS wanted
@@ -240,7 +237,6 @@ export const makeThreadFind = Effect.fn("makeThreadFind")(function* (
             ...row,
             payload: payload.payload_json,
             entryId: payload.entry_id,
-            runId: payload.run_id,
             type: payload.item_type,
           });
     });
@@ -347,17 +343,17 @@ export const makeThreadFind = Effect.fn("makeThreadFind")(function* (
             ),
           );
         // Answers rendered inside question cards must not appear as separate matches.
-        const foldedAnswerRunIds = new Map<string, OrchestrationV2TurnItem["runId"]>();
+        const foldedAnswers = new Set<string>();
         for (const payload of payloads) {
           if (payload.type !== "user_input_request") continue;
           const { item } = yield* decode(payload);
           if (item.type === "user_input_request" && item.questionAnswer)
-            foldedAnswerRunIds.set(`async-answer:${item.questionAnswer.requestId}`, item.runId);
+            foldedAnswers.add(`async-answer:${item.questionAnswer.requestId}`);
         }
         const rows = payloads.filter(
           (row) =>
             row.type !== "user_input_request" &&
-            !(row.type === "user_message" && foldedAnswerRunIds.get(row.entryId) === row.runId),
+            !(row.type === "user_message" && foldedAnswers.has(row.entryId)),
         );
         const documents = new Map<number, FindDocument>();
         const count = Effect.fnUntraced(function* (row: FindPayload) {

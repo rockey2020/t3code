@@ -118,7 +118,6 @@ import {
 } from "./composerContextUndo";
 import { ComposerBanner } from "./ComposerBanner";
 import { ComposerSurface } from "./ComposerSurface";
-import { CollapsedComposerPromptPreview } from "./CollapsedComposerPromptPreview";
 import { ComposerBannerStack, type ComposerBannerStackItem } from "./ComposerBannerStack";
 import {
   attachmentsToReleaseOnUploadCapabilityLoss,
@@ -3349,18 +3348,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   onClick={expandMobileComposerStable}
                   aria-label={t("Expand composer")}
                 >
-                  {prompt.trim() ? (
-                    <CollapsedComposerPromptPreview
-                      prompt={prompt}
-                      skills={selectedProviderSkills}
-                      contextRecords={composerContextRecords}
-                      theme={resolvedTheme}
-                    />
-                  ) : showProviderUnavailable ? (
-                    t("Enable a provider in Settings")
-                  ) : (
-                    t("Ask anything...")
-                  )}
+                  {prompt.trim() ||
+                    (showProviderUnavailable
+                      ? t("Enable a provider in Settings")
+                      : t("Ask anything..."))}
                 </button>
                 {collapsedComposerImagePreviews}
                 <button

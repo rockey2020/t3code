@@ -189,6 +189,7 @@ interface GitRefsSnapshot {
 interface ExecuteGitOptions {
   stdin?: string | undefined;
   timeoutMs?: number | null | undefined;
+  forceKillAfterMs?: number | undefined;
   allowNonZeroExit?: boolean | undefined;
   fallbackErrorDetail?: string | undefined;
   env?: NodeJS.ProcessEnv | undefined;
@@ -994,8 +995,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
             ChildProcess.make(executable, commandInput.args, {
               cwd: commandInput.cwd,
               env: spawnEnv,
-              // SIGTERM first lets git remove its lock files; SIGKILL ends one that ignores it.
-              forceKillAfter: "1 second",
+              forceKillAfter: input.forceKillAfterMs,
               ...(runsGitWithoutConsole(hostPlatform, executable, commandInput.args)
                 ? { detached: true, windowsHide: true }
                 : {}),
@@ -1164,6 +1164,9 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       ...(options.env !== undefined ? { env: options.env } : {}),
       allowNonZeroExit: true,
       ...(options.timeoutMs !== undefined ? { timeoutMs: options.timeoutMs } : {}),
+      ...(options.forceKillAfterMs !== undefined
+        ? { forceKillAfterMs: options.forceKillAfterMs }
+        : {}),
       ...(options.maxOutputBytes !== undefined ? { maxOutputBytes: options.maxOutputBytes } : {}),
       ...(options.appendTruncationMarker !== undefined
         ? { appendTruncationMarker: options.appendTruncationMarker }
@@ -1378,6 +1381,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
           env: STATUS_UPSTREAM_REFRESH_ENV,
           fallbackErrorDetail: "Background Git fetch exited with a non-zero status.",
           timeoutMs: Duration.toMillis(STATUS_UPSTREAM_FETCH_TIMEOUT),
+          forceKillAfterMs: 1_000,
         }).pipe(
           Effect.asVoid,
           Effect.tap(() =>
@@ -5036,39 +5040,17 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
             ).pipe(Effect.map((result) => result.exitCode === 0))
           : false;
 
-      const newTrackingBranch =
-        !localInputExists && remoteExists && !localTrackingBranch && !localTrackedBranchTargetExists
-          ? localTrackedBranchCandidate
-          : null;
-
       const checkoutArgs = localInputExists
         ? ["checkout", input.refName]
         : remoteExists && !localTrackingBranch && localTrackedBranchTargetExists
           ? ["checkout", input.refName]
-          : newTrackingBranch
-            ? ["checkout", newTrackingBranch]
-            : remoteExists && !localTrackingBranch
-              ? ["checkout", "--track", input.refName]
-              : remoteExists && localTrackingBranch
-                ? ["checkout", localTrackingBranch]
-                : ["checkout", input.refName];
+          : remoteExists && !localTrackingBranch
+            ? ["checkout", "--track", input.refName]
+            : remoteExists && localTrackingBranch
+              ? ["checkout", localTrackingBranch]
+              : ["checkout", input.refName];
 
       yield* refuseOptionLikeRefName("GitVcsDriver.switchRef", input.cwd, checkoutArgs.at(-1));
-
-      // Created before the checkout so the shared-config lock is not held while files are written.
-      // Not rolled back on failure: Git may already have switched HEAD to it (post-checkout hooks).
-      if (newTrackingBranch) {
-        yield* executeGit(
-          "GitVcsDriver.switchRef.createTrackingBranch",
-          input.cwd,
-          ["branch", "--track", "--", newTrackingBranch, input.refName],
-          {
-            timeoutMs: 10_000,
-            fallbackErrorDetail: "git branch create failed",
-            writesSharedConfig: true,
-          },
-        );
-      }
 
       // A stale ref must not turn into a path checkout that discards local edits.
       yield* executeGitWithStableDiagnostics(
@@ -5076,11 +5058,10 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         input.cwd,
         [...checkoutArgs, "--"],
         {
-          // Killing a checkout midway (large or LFS repos) leaves a half-updated working tree.
-          timeoutMs: null,
+          timeoutMs: 10_000,
           fallbackErrorDetail: "git checkout failed",
-          // Creating a branch writes its upstream; Git also guesses a remote branch for a missing name.
-          writesSharedConfig: checkoutArgs[1] === "--track" || (!localInputExists && !remoteExists),
+          // Checking out a remote branch creates a local one that tracks it.
+          writesSharedConfig: !localInputExists,
         },
       );
 

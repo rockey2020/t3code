@@ -1137,8 +1137,6 @@ function deriveTurnFolds(input: {
     const terminalEntryIndex = group.terminalEntry
       ? group.entries.findIndex((entry) => entry.id === group.terminalEntry?.id)
       : group.entries.length;
-    // Folded dividers lose their place in the turn, so only the latest stays visible.
-    const visibleCompactionId = group.entries.findLast(timelineEntryIsCompaction)?.id;
     for (const [index, entry] of group.entries.entries()) {
       if (entry.id === group.terminalEntry?.id) {
         continue;
@@ -1152,7 +1150,7 @@ function deriveTurnFolds(input: {
         continue;
       }
       if (
-        entry.id === visibleCompactionId ||
+        isCompaction ||
         timelineEntryIsPersistentResourceCard(entry) ||
         input.liveSubagentEntryIds.has(entry.id) ||
         input.completeSupersededReplyEntryIds.has(entry.id)
@@ -1529,7 +1527,7 @@ export function deriveMessagesTimelineRows(input: {
   activeTurnStartedAt?: string | null;
   turnDiffSummaries: ReadonlyArray<TurnDiffSummary>;
   supportsConversationRollback: boolean;
-  threadStartCheckpointAvailable?: boolean;
+  threadStartCheckpointReady?: boolean;
   availableRevertTurnCounts?: ReadonlySet<number> | undefined;
   worktreeSetup?: WorktreeSetupSnapshot | null;
   toolCallVisibility?: ToolCallVisibility;
@@ -1560,7 +1558,7 @@ export function deriveMessagesTimelineRows(input: {
     ? deriveRevertTurnCountByUserMessageId({
         timelineEntries: input.timelineEntries,
         checkpoints: input.turnDiffSummaries,
-        threadStartCheckpointAvailable: input.threadStartCheckpointAvailable === true,
+        threadStartCheckpointReady: input.threadStartCheckpointReady === true,
         unsettledRunId,
         availableRevertTurnCounts: input.availableRevertTurnCounts,
       })

@@ -74,13 +74,7 @@ export default function Spreadsheet(props: {
         if (!value)
           throw new Error(translateNow(filesUiMessages, "This workbook has no visible sheets."));
         setOpened({ ...value, engine });
-        onDetails(
-          translateNow(
-            filesUiMessages,
-            value.tabs.length === 1 ? "{count} sheet" : "{count} sheets",
-            { count: value.tabs.length },
-          ),
-        );
+        onDetails(translateNow(filesUiMessages, "{count} sheets", { count: value.tabs.length }));
       })
       .catch(fail);
     return () => {

@@ -147,7 +147,7 @@ export function SkillChipPopover(props: {
   );
 }
 
-export function SkillChipIcon() {
+function SkillChipIcon() {
   return (
     <span
       aria-hidden="true"

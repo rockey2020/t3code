@@ -87,9 +87,6 @@ describe("parseMarkdownFileLink", () => {
     "me@example.com",
     "foo(bar)",
     "$HOME",
-    "/tmp/claude-1000/...",
-    "/tmp/claude-1000/....:12",
-    "/tmp/claude-1000/%2E%2E%2E",
     "\\foo.ts",
   ])("does not treat %s as a file", (href) => {
     expect(parseMarkdownFileLink(href)).toBeNull();

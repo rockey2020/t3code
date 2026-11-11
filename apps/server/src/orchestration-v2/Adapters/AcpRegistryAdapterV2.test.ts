@@ -1210,10 +1210,7 @@ describe("AcpRegistryAdapterV2", () => {
           type: "http",
           name: "t3-code",
           url: endpoint,
-          headers: [
-            { name: "Authorization", value: authorization },
-            { name: "t3-tool-exposure", value: "deferred" },
-          ],
+          headers: [{ name: "Authorization", value: authorization }],
         },
       ];
       const stdio = (authorization: string) => [

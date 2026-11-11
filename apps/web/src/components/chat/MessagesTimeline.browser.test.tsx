@@ -1234,7 +1234,7 @@ describe("MessagesTimeline automation prompts", () => {
       ],
       {
         supportsConversationRollback: true,
-        threadStartCheckpointAvailable: true,
+        threadStartCheckpointReady: true,
         turnDiffSummaries: [
           {
             runId,

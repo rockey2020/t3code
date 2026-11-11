@@ -12,8 +12,6 @@ export const commandPaletteUiMessages = {
     "相对路径需要此环境中有活动项目。",
   "No project in this environment can read {host}/{repository}.":
     "此环境中没有项目能读取 {host}/{repository}。",
-  "Choose a folder in the environment the repository is cloned into.":
-    "请在克隆仓库的目标环境中选择文件夹。",
   // Groups, placeholders and empty states
   Suggestions: "建议",
   Threads: "会话",

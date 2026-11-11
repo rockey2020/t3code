@@ -285,10 +285,7 @@ it.effect("returns an HTML render reference that Codex and Claude tool rows both
       server
         .callTool({
           name,
-          arguments: {
-            path: "/t3-missing-dir/revenue.html",
-            ...(name === "html_render" ? { title: "Revenue", height: 240 } : {}),
-          },
+          arguments: { path: "/t3-missing-dir/revenue.html", title: "Revenue", height: 240 },
         })
         .pipe(
           Effect.provideService(McpInvocationContext.McpInvocationContext, caller),
@@ -405,7 +402,7 @@ it.effect("rejects an unknown organize target instead of archiving the calling t
     expect(dispatched).toEqual([]);
     expect(outcome).toMatchObject({
       _tag: "Failure",
-      failure: { message: expect.stringContaining('Unknown argument "threadIds"') },
+      failure: { message: expect.stringContaining("Expected no excess property") },
     });
   }).pipe(
     Effect.provide(

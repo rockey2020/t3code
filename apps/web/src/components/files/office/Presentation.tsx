@@ -88,11 +88,7 @@ export default function Presentation(props: {
             translateNow(filesUiMessages, "Preview limited to presentations with 1 to 500 slides."),
           );
         setOpened({ slides, paint });
-        onDetails(
-          translateNow(filesUiMessages, slides.length === 1 ? "{count} slide" : "{count} slides", {
-            count: slides.length,
-          }),
-        );
+        onDetails(translateNow(filesUiMessages, "{count} slides", { count: slides.length }));
       })
       .catch(fail);
     return () => {

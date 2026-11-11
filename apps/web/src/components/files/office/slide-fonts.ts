@@ -5,8 +5,7 @@ import type {
   SlideDisplayList,
   SlidePrimitive,
 } from "@betteroffice/pptx";
-import { resolveScriptFallbackFace } from "@betteroffice/fonts";
-import { loadFace, presentationFace } from "./fonts";
+import { loadFace, presentationFace, scriptFace } from "./fonts";
 import type { DeckText, FallbackScript, FontStyle } from "./slide-text";
 
 /** A face the deck asks for: a family it names, or the fallback for a script the Latin faces lack. */
@@ -33,7 +32,7 @@ export function slideFonts(deck: PresentationHandle, fonts: FontFaceSet) {
   /** Loads a face's bytes and browser face; the returned function registers both, so callers choose the order. */
   const prepare = async (want: Want, requested: FontStyle) => {
     const source = want.script
-      ? resolveScriptFallbackFace(want.script, requested.bold, requested.italic)
+      ? scriptFace(want.script, requested.bold, requested.italic)
       : presentationFace(want.family, requested.bold, requested.italic);
 
     if (!source) return;

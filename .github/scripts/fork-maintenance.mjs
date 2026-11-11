@@ -43,6 +43,25 @@ export function releaseComplete(release) {
   );
 }
 
+// An audited release may absorb later fork fixes only while the upstream
+// baseline is unchanged. Otherwise its delta could import main-only features
+// into an older stable tag and must be resolved against that tag explicitly.
+export function auditedOverlay({
+  override,
+  fingerprint,
+  upstream,
+  readBaseline,
+  isAncestor,
+  diff,
+}) {
+  if (!override) return null;
+  if (override.fingerprint === fingerprint) return { source: override.sourceCommit, patch: "" };
+  if (!/^[0-9a-f]{40}$/.test(override.forkCommit ?? "")) return null;
+  if (!isAncestor(override.forkCommit) || readBaseline(override.forkCommit) !== upstream)
+    return null;
+  return { source: override.sourceCommit, patch: diff(override.forkCommit) };
+}
+
 async function api(path, options = {}) {
   const response = await fetch(`https://api.github.com/${path}`, {
     ...options,
@@ -234,22 +253,48 @@ async function prepare() {
         });
         continue;
       }
-      const override = overrides[source];
-      const useOverride = override?.fingerprint === fingerprint;
-      if (useOverride) {
-        if (!/^[0-9a-f]{40}$/.test(override.sourceCommit))
+      const audited = auditedOverlay({
+        override: overrides[source],
+        fingerprint,
+        upstream: state.sha,
+        readBaseline: (ref) => JSON.parse(git(["show", `${ref}:.fork/upstream.json`])).sha,
+        isAncestor: (ref) => {
+          try {
+            git(["merge-base", "--is-ancestor", ref, fork]);
+            return true;
+          } catch {
+            return false;
+          }
+        },
+        diff: (ref) =>
+          git([
+            "diff",
+            "--binary",
+            ref,
+            fork,
+            "--",
+            ".",
+            ":(exclude).fork/upstream.json",
+            ":(exclude).fork/release-sources.json",
+            ":(exclude).github/workflows",
+            ":(exclude).github/upstream-workflows",
+          ]),
+      });
+      if (audited) {
+        if (!/^[0-9a-f]{40}$/.test(audited.source))
           throw new Error("Invalid audited release source commit");
-        git(["fetch", "--no-tags", "origin", override.sourceCommit]);
-        git(["merge-base", "--is-ancestor", source, override.sourceCommit]);
+        git(["fetch", "--no-tags", "origin", audited.source]);
+        git(["merge-base", "--is-ancestor", source, audited.source]);
       }
       const worktree = NodePath.resolve(root, `../fork-source-${release.channel}`);
-      git(["worktree", "add", "--detach", worktree, useOverride ? override.sourceCommit : source]);
+      git(["worktree", "add", "--detach", worktree, audited ? audited.source : source]);
       try {
         // --3way reports conflicts instead of replacing newer upstream logic.
-        if (patch && !useOverride)
+        const releasePatch = audited ? audited.patch : patch;
+        if (releasePatch)
           git(["apply", "--3way", "--whitespace=nowarn", "-"], {
             cwd: worktree,
-            input: `${patch}\n`,
+            input: `${releasePatch}\n`,
           });
         // Source branches keep the exact upstream workflow files. The release
         // is executed by the fork workflow on main, not by these definitions.

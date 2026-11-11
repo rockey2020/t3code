@@ -1,6 +1,11 @@
 import * as NodeTest from "node:test";
 import * as NodeAssert from "node:assert/strict";
-import { releaseChannel, selectReleases, releaseComplete } from "./fork-maintenance.mjs";
+import {
+  releaseChannel,
+  selectReleases,
+  releaseComplete,
+  auditedOverlay,
+} from "./fork-maintenance.mjs";
 
 NodeTest.test("only stable and official nightly tags are admitted", () => {
   NodeAssert.equal(releaseChannel("v0.1.9"), "stable");
@@ -33,3 +38,35 @@ NodeTest.test("partial and draft releases are retried", () => {
   NodeAssert.equal(releaseComplete({ draft: true, assets }), false);
   NodeAssert.equal(releaseComplete({ draft: false, assets: assets.slice(0, 1) }), false);
 });
+
+NodeTest.test(
+  "audited release sources accept fork-only changes but never newer upstream features",
+  () => {
+    const commit = "1".repeat(40);
+    const override = { sourceCommit: "2".repeat(40), fingerprint: "old", forkCommit: commit };
+    const args = {
+      override,
+      fingerprint: "new",
+      upstream: "tag-baseline",
+      readBaseline: () => "tag-baseline",
+      isAncestor: () => true,
+      diff: (ref) => `fork-only changes since ${ref}`,
+    };
+    NodeAssert.deepEqual(auditedOverlay(args), {
+      source: override.sourceCommit,
+      patch: `fork-only changes since ${commit}`,
+    });
+    NodeAssert.equal(auditedOverlay({ ...args, readBaseline: () => "different-upstream" }), null);
+    NodeAssert.equal(auditedOverlay({ ...args, isAncestor: () => false }), null);
+    NodeAssert.deepEqual(
+      auditedOverlay({
+        ...args,
+        fingerprint: "old",
+        diff: () => {
+          throw new Error("exact audited source needs no replay");
+        },
+      }),
+      { source: override.sourceCommit, patch: "" },
+    );
+  },
+);

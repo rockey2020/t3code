@@ -19,7 +19,7 @@ permissions:
 
 concurrency:
   group: fork-maintenance
-  cancel-in-progress: false
+  cancel-in-progress: ${{ github.event_name == 'push' }}
 
 jobs:
   maintain:
@@ -51,7 +51,14 @@ jobs:
       - name: Ensure Electron runtime for focused checks
         run: vp run --filter @t3tools/desktop ensure:electron
       - name: Install browser test runtime
-        run: node apps/web/node_modules/playwright/cli.js install --with-deps --only-shell chromium
+        timeout-minutes: 10
+        run: |
+          node apps/web/node_modules/playwright/cli.js install --only-shell chromium
+          browser=$(find "$HOME/.cache/ms-playwright" -name chrome-headless-shell -type f -print -quit)
+          if [[ -z "$browser" ]]; then echo "Chromium was not installed" >&2; exit 1; fi
+          if ldd "$browser" | grep -q 'not found'; then
+            node apps/web/node_modules/playwright/cli.js install-deps chromium
+          fi
       - name: Verify localization exports
         run: node scripts/i18n-export.ts --check
       - name: Scan untranslated strings

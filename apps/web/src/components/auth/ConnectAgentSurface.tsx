@@ -5,7 +5,6 @@ import {
   AuthMcpClientAccess,
   AuthMcpAuthorizationRequest,
   isRuntimeModeAbove,
-  managedRuntimeModeCeilingMessage,
   parseMcpApprovalCode,
 } from "@t3tools/contracts";
 import { Radio as RadioPrimitive } from "@base-ui/react/radio";
@@ -17,14 +16,19 @@ import * as Schema from "effect/Schema";
 import { type ReactNode, useEffect, useState } from "react";
 
 import { PrimaryEnvironmentHttpClient } from "~/environments/primary/httpClient";
+import { fillNode } from "~/i18n/fillNode";
+import type { Locale } from "~/i18n/locale";
+import { useLocale, useTranslation } from "~/i18n/useTranslation";
 import { runPrimaryHttp } from "~/lib/runtime";
 import { cn } from "~/lib/utils";
+import { authUiMessages } from "./authUi.messages";
 import {
   agentRedirectUrl,
   resolveApprovalDecision,
   resolveMcpAccess,
 } from "./ConnectAgentSurface.logic";
 import { runtimeModeConfig } from "../chat/runtimeModeConfig";
+import { translateConnectionLabel } from "../settings/settingsConnections.messages";
 import { Alert, AlertDescription } from "../ui/alert";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
@@ -121,6 +125,12 @@ export function readAuthorizationRequest(): AuthMcpAuthorizationRequest {
   return decodeAuthorizationRequest(Object.fromEntries(new URL(window.location.href).searchParams));
 }
 
+type T = ReturnType<typeof useTranslation<typeof authUiMessages>>;
+
+/** Approval errors come from the server in English; only this page's own fallbacks translate. */
+const ownMessage = (message: string, t: T) =>
+  Object.hasOwn(authUiMessages, message) ? t(message as keyof typeof authUiMessages) : message;
+
 export function ConnectAgentSurface() {
   const [authorization] = useState(readAuthorizationRequest);
   return <McpConsent authorization={authorization} transport={primaryTransport} acceptsCode />;
@@ -145,6 +155,10 @@ export function McpConsent({
   readonly environmentLabel?: string | undefined;
   readonly footer?: ReactNode;
 }) {
+  const t = useTranslation(authUiMessages);
+  const locale = useLocale();
+  const accessLabel = (option: AuthMcpClientAccess) =>
+    translateConnectionLabel(accessConfig[option].label, locale);
   const [loaded, setLoaded] = useState<Loaded>({ status: "loading" });
   const [requestedAccess, setAccess] = useState<AuthMcpClientAccess | null>(null);
   const [pairingCode, setPairingCode] = useState("");
@@ -224,8 +238,8 @@ export function McpConsent({
     return (
       <StandalonePage>
         <ConnectAgentHeading
-          title="Checking the sign-in request"
-          description="One moment while this environment verifies the agent's request."
+          title={t("Checking the sign-in request")}
+          description={t("One moment while this environment verifies the agent's request.")}
         />
         <Spinner className="mt-6" size="lg" tone="muted" />
       </StandalonePage>
@@ -235,9 +249,12 @@ export function McpConsent({
   if (loaded.status === "invalid") {
     return (
       <StandalonePage>
-        <ConnectAgentHeading title="This sign-in cannot continue" description={loaded.message} />
+        <ConnectAgentHeading
+          title={t("This sign-in cannot continue")}
+          description={ownMessage(loaded.message, t)}
+        />
         <p className="mt-4 text-sm text-muted-foreground">
-          Close this page and start the sign-in again from your agent.
+          {t("Close this page and start the sign-in again from your agent.")}
         </p>
         {footer}
       </StandalonePage>
@@ -257,39 +274,42 @@ export function McpConsent({
   return (
     <StandalonePage>
       <ConnectAgentHeading
-        title={`Connect ${details.clientName}`}
-        description={
+        title={t("Connect {client}", { client: details.clientName })}
+        description={fillNode(
+          t("This agent wants to use the threads in every project on {host}."),
           <>
-            This agent wants to use the threads in every project on{" "}
             <span className="font-medium text-foreground">
               {environmentLabel ?? details.environmentHost}
             </span>
-            {environmentLabel ? ` (${details.environmentHost})` : null}.
-          </>
-        }
+            {environmentLabel ? ` (${details.environmentHost})` : null}
+          </>,
+        )}
       />
       <dl className="mt-4 grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1 text-sm">
-        <dt className="text-muted-foreground">App</dt>
+        <dt className="text-muted-foreground">{t("App")}</dt>
         <dd className="min-w-0 break-words">
-          {details.clientName} <span className="text-muted-foreground">· name set by the app</span>
+          {details.clientName}{" "}
+          <span className="text-muted-foreground">{t("· name set by the app")}</span>
         </dd>
-        <dt className="text-muted-foreground">Access goes to</dt>
+        <dt className="text-muted-foreground">{t("Access goes to")}</dt>
         <dd className="min-w-0 break-words font-medium">
           {details.redirectHost}
           {redirectsToThisComputer(details.redirectHost) ? (
             <span className="font-normal text-muted-foreground">
               {" "}
-              on the computer that opened this page
+              {t("on the computer that opened this page")}
             </span>
           ) : (
             <span className="font-normal text-muted-foreground">
               {" "}
-              · whoever runs it gets this access
+              {t("· whoever runs it gets this access")}
             </span>
           )}
         </dd>
       </dl>
-      <p className="mt-2 text-xs text-muted-foreground">Only approve a sign-in you just started.</p>
+      <p className="mt-2 text-xs text-muted-foreground">
+        {t("Only approve a sign-in you just started.")}
+      </p>
 
       <form
         className="mt-6 space-y-5"
@@ -301,7 +321,7 @@ export function McpConsent({
         {acceptsCode ? (
           <div className="space-y-2">
             <label className="text-sm font-medium" htmlFor="connect-agent-pairing-code">
-              Sign-in code
+              {t("Sign-in code@@agent")}
             </label>
             <Input
               id="connect-agent-pairing-code"
@@ -311,26 +331,30 @@ export function McpConsent({
               disabled={pending !== null}
               nativeInput
               onChange={(event) => setPairingCode(event.currentTarget.value)}
-              placeholder="Paste a code"
+              placeholder={t("Paste a code")}
               spellCheck={false}
               value={pairingCode}
             />
             <p className="text-xs text-muted-foreground">
-              Get one from Use T3 Code in another app (MCP), Settings → Sharing & access, or{" "}
-              <code>t3 auth pairing create</code> on this machine.
+              {fillNode(
+                t(
+                  "Get one from Use T3 Code in another app (MCP), Settings → Sharing & access, or {command} on this machine.",
+                ),
+                <code>t3 auth pairing create</code>,
+              )}
             </p>
           </div>
         ) : null}
 
         {codeAccess ? (
           <p className="text-sm">
-            <span className="text-muted-foreground">Access</span>{" "}
-            <span className="font-medium">{accessConfig[codeAccess].label}</span>
+            <span className="text-muted-foreground">{t("Access")}</span>{" "}
+            <span className="font-medium">{accessLabel(codeAccess)}</span>
           </p>
         ) : (
           <div className="space-y-2">
             <span id="connect-agent-access-label" className="text-sm font-medium">
-              What it may do
+              {t("What it may do")}
             </span>
             <RadioGroup
               aria-labelledby="connect-agent-access-label"
@@ -342,30 +366,31 @@ export function McpConsent({
                   key={option}
                   access={option}
                   selected={option === access}
-                  disabledReason={ceilingReason(details, option)}
+                  disabledReason={ceilingReason(details, option, t, locale)}
                 />
               ))}
             </RadioGroup>
             <p className="text-xs text-muted-foreground">
-              Beyond read only, it can start, message and stop threads, and none of them can run
-              with more than the mode you pick.
+              {t(
+                "Beyond read only, it can start, message and stop threads, and none of them can run with more than the mode you pick.",
+              )}
             </p>
           </div>
         )}
 
         {errorMessage ? (
           <Alert variant="error">
-            <AlertDescription>{errorMessage}</AlertDescription>
+            <AlertDescription>{ownMessage(errorMessage, t)}</AlertDescription>
           </Alert>
         ) : null}
 
         <div className="flex flex-wrap gap-2">
           <Button disabled={!canApprove} type="submit">
             {pending === "approve"
-              ? "Approving…"
+              ? t("Approving…")
               : approveLevel === null
-                ? "Choose what it may do"
-                : `Approve ${accessConfig[approveLevel].label}`}
+                ? t("Choose what it may do")
+                : t("Approve {access}", { access: accessLabel(approveLevel) })}
           </Button>
           <Button
             disabled={pending !== null}
@@ -373,7 +398,7 @@ export function McpConsent({
             type="button"
             variant="outline"
           >
-            {pending === "deny" ? "Denying…" : "Deny"}
+            {pending === "deny" ? t("Denying…") : t("Deny")}
           </Button>
         </div>
       </form>
@@ -389,17 +414,28 @@ function ConnectAgentHeading({
   readonly title: string;
   readonly description: ReactNode;
 }) {
-  return <StandalonePageHeader context="Agent sign-in" title={title} description={description} />;
+  const t = useTranslation(authUiMessages);
+  return (
+    <StandalonePageHeader context={t("Agent sign-in")} title={title} description={description} />
+  );
 }
 
 /** Why a managed policy keeps `access` from being granted, or undefined when it may be. */
-function ceilingReason(details: AuthMcpApprovalDetails, access: AuthMcpClientAccess) {
+function ceilingReason(
+  details: AuthMcpApprovalDetails,
+  access: AuthMcpClientAccess,
+  t: T,
+  locale: Locale,
+) {
   const ceiling = details.runtimeModeCeiling;
   return ceiling === undefined ||
     access === "read-only" ||
     !isRuntimeModeAbove(access, ceiling.maxRuntimeMode)
     ? undefined
-    : managedRuntimeModeCeilingMessage(ceiling.organization, ceiling.maxRuntimeMode);
+    : t("{organization} limits threads to {mode}.", {
+        organization: ceiling.organization,
+        mode: translateConnectionLabel(accessConfig[ceiling.maxRuntimeMode].label, locale),
+      });
 }
 
 /** One access level in a radio group; `description` replaces the level's own, null hides it. */
@@ -414,9 +450,13 @@ export function AccessOption({
   readonly disabledReason: string | undefined;
   readonly description?: string | null;
 }) {
+  const locale = useLocale();
   const { label, icon: Icon } = accessConfig[access];
   const detail =
-    disabledReason ?? (description === undefined ? accessConfig[access].description : description);
+    disabledReason ??
+    (description === undefined
+      ? translateConnectionLabel(accessConfig[access].description, locale)
+      : description);
   return (
     <RadioPrimitive.Root
       value={access}
@@ -437,7 +477,9 @@ export function AccessOption({
         )}
       />
       <span className="min-w-0">
-        <span className="block text-sm font-medium text-foreground">{label}</span>
+        <span className="block text-sm font-medium text-foreground">
+          {translateConnectionLabel(label, locale)}
+        </span>
         {detail === null ? null : (
           <span className="block text-xs text-muted-foreground">{detail}</span>
         )}

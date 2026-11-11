@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 
 import { getClientSettings, subscribeClientSettings } from "../hooks/useSettings";
+import { translateNow } from "../i18n/useTranslation";
 import { isWindowsPlatform } from "../lib/utils";
 import { environmentSummaries } from "../state/presentation";
 import { environmentShell } from "../state/shell";
@@ -38,6 +39,7 @@ import {
   type ThreadNotificationKind,
   type ThreadNotificationObservation,
 } from "./ThreadNotificationCoordinator.logic";
+import { globalUiMessages } from "./globalUi.messages";
 import { toastManager } from "./ui/toast";
 
 interface NotificationState extends ThreadNotificationObservation {
@@ -130,7 +132,8 @@ export function startThreadNotifications(
       environmentId?: string;
       threadId?: string;
     };
-    const title =
+    const title = translateNow(
+      globalUiMessages,
       kind === "completion"
         ? "Thread completed"
         : status === "approval"
@@ -141,7 +144,8 @@ export function startThreadNotifications(
               ? "Thread failed"
               : status === "request"
                 ? "Guest request"
-                : "Input needed";
+                : "Input needed",
+    );
     if (hasNotificationSound(mode)) {
       void playNotificationSound(kind, () =>
         hasNotificationSound(getClientSettings().notificationMode),
@@ -175,7 +179,7 @@ export function startThreadNotifications(
             ),
         },
         actionProps: {
-          children: "Open thread",
+          children: translateNow(globalUiMessages, "Open thread"),
           onClick: () => {
             toastManager.close(toastId);
             void router.navigate({

@@ -9,6 +9,7 @@ vi.mock(import("./CommandOutputPanel"), () => ({
 }));
 
 import { render } from "../../../test/render";
+import { englishThreadPanel } from "./chatTranslators";
 import { backgroundWorkNowItem } from "./ThreadActivityBanners";
 import { ThreadNow } from "./ThreadNow";
 
@@ -43,6 +44,7 @@ it("opens full command details for short labels and keeps pending tasks current"
       syncPhase={null}
       goal={null}
       work={backgroundWorkNowItem({
+        t: englishThreadPanel,
         environmentId: EnvironmentId.make("test"),
         threadId: ThreadId.make("thread"),
         tasks: [

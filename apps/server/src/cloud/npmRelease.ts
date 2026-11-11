@@ -1,3 +1,4 @@
+import { APP_UPDATES_ENABLED } from "@t3tools/shared/appUpdatePolicy";
 import {
   ServerNpmReleaseError,
   ServerNpmReleaseInput,
@@ -117,6 +118,7 @@ export const make = Effect.fn("NpmRelease.make")(function* () {
   });
   return NpmRelease.of({
     get: Effect.fn("NpmRelease.get")(function* (input) {
+      if (!APP_UPDATES_ENABLED) return null;
       const { spec } = yield* decodeInput(input).pipe(
         Effect.mapError(
           () => new ServerNpmReleaseError({ reason: "Invalid release version or track." }),

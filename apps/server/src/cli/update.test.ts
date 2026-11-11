@@ -530,3 +530,10 @@ it.layer(NodeServices.layer)("t3 update with a background service", (it) => {
     ),
   );
 });
+
+// Preserve upstream updater coverage; forkUpdatePolicy tests the production-disabled policy.
+vi.mock("@t3tools/shared/appUpdatePolicy", () => ({
+  APP_UPDATES_ENABLED: true,
+  APP_UPDATES_DISABLED_REASON:
+    "Application update checks and automatic updates are disabled in this build.",
+}));

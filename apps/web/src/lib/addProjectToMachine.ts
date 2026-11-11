@@ -1,3 +1,5 @@
+import { translateNow } from "~/i18n/useTranslation";
+import { globalUiMessages } from "~/components/globalUi.messages";
 import {
   executeAtomQuery,
   runAtomCommand,
@@ -111,10 +113,16 @@ export async function addProjectToMachine(input: AddProjectToMachineInput): Prom
           environmentId: input.source.environmentId,
           input: { cwd: input.source.cwd, relativePath },
         }),
-        { label: "Read file to copy", reportFailure: false, refresh: true },
+        {
+          label: translateNow(globalUiMessages, "Read file to copy"),
+          reportFailure: false,
+          refresh: true,
+        },
       );
       if (result._tag === "Failure") return { relativePath, error: failureMessage(result) };
-      if (result.value.truncated) return { relativePath, error: "Too large to copy." };
+      if (result.value.truncated) {
+        return { relativePath, error: translateNow(globalUiMessages, "Too large to copy.") };
+      }
       return { relativePath, contents: result.value.contents };
     }),
   );
@@ -137,7 +145,7 @@ export async function addProjectToMachine(input: AddProjectToMachineInput): Prom
         destinationPath: input.destinationPath,
       },
     },
-    { label: "Add project to machine", reportFailure: false },
+    { label: translateNow(globalUiMessages, "Add project to machine"), reportFailure: false },
   );
   if (started._tag === "Failure") {
     setFileCopy(requestedKey, null);
@@ -182,7 +190,7 @@ export async function addProjectToMachine(input: AddProjectToMachineInput): Prom
             contents: read.contents,
           },
         },
-        { label: "Copy file to machine", reportFailure: false },
+        { label: translateNow(globalUiMessages, "Copy file to machine"), reportFailure: false },
       );
       if (written._tag === "Failure")
         failed.push(`${read.relativePath}: ${failureMessage(written)}`);
@@ -193,7 +201,10 @@ export async function addProjectToMachine(input: AddProjectToMachineInput): Prom
         ? null
         : {
             phase: "failed",
-            title: `Could not copy ${failed.length} ${failed.length === 1 ? "file" : "files"} to ${input.target.label}`,
+            title: translateNow(globalUiMessages, "Could not copy {count} files to {machine}", {
+              count: failed.length,
+              machine: input.target.label,
+            }),
             failures: failed,
           },
     );

@@ -38,6 +38,7 @@ import * as ElectronApp from "../electron/ElectronApp.ts";
 import * as DesktopRendererHistory from "../telemetry/DesktopRendererHistory.ts";
 import { makeQuitShortcutHandler } from "./QuitHold.ts";
 import { copyContextMenuImage } from "./ContextMenuImage.ts";
+import { localizeApplicationMenu, localizeDesktopText } from "./menuLocalization.ts";
 
 const TITLEBAR_HEIGHT = 40;
 
@@ -389,6 +390,8 @@ export const make = Effect.gen(function* () {
     if (yield* Ref.get(desktopState.quitting)) return Option.none();
     yield* previewManager.getBrowserSession();
     const applicationUrl = getDesktopUrl(environment.isDevelopment);
+    const languages = yield* electronApp.preferredSystemLanguages;
+    const t = (text: string) => localizeDesktopText(text, languages);
     const iconPaths = yield* assets.iconPaths;
     const iconOption = getIconOption(iconPaths, environment.platform);
     const shouldUseDarkColors = yield* electronTheme.shouldUseDarkColors;
@@ -588,7 +591,7 @@ export const make = Effect.gen(function* () {
             });
           }
           if (params.dictionarySuggestions.length === 0) {
-            menuTemplate.push({ label: "No suggestions", enabled: false });
+            menuTemplate.push({ label: t("No suggestions"), enabled: false });
           }
           menuTemplate.push({ type: "separator" });
         }
@@ -596,7 +599,7 @@ export const make = Effect.gen(function* () {
         if (Option.isSome(ElectronShell.parseSafeExternalUrl(params.linkURL))) {
           menuTemplate.push(
             {
-              label: "Copy Link",
+              label: t("Copy Link"),
               click: () => {
                 void runPromise(electronShell.copyText(params.linkURL));
               },
@@ -609,7 +612,7 @@ export const make = Effect.gen(function* () {
         if (Option.isSome(mailtoAddress)) {
           menuTemplate.push(
             {
-              label: "Copy Email Address",
+              label: t("Copy Email Address"),
               click: () => {
                 void runPromise(electronShell.copyText(mailtoAddress.value));
               },
@@ -620,7 +623,7 @@ export const make = Effect.gen(function* () {
 
         if (params.mediaType === "image") {
           menuTemplate.push({
-            label: "Copy Image",
+            label: t("Copy Image"),
             click: () => {
               void runPromise(
                 Effect.tryPromise({
@@ -634,10 +637,16 @@ export const make = Effect.gen(function* () {
         }
 
         menuTemplate.push(
-          { role: "cut", enabled: params.editFlags.canCut },
-          { role: "copy", enabled: params.editFlags.canCopy },
-          { role: "paste", enabled: params.editFlags.canPaste },
-          { role: "selectAll", enabled: params.editFlags.canSelectAll },
+          ...localizeApplicationMenu(
+            [
+              { role: "cut", enabled: params.editFlags.canCut },
+              { role: "copy", enabled: params.editFlags.canCopy },
+              { role: "paste", enabled: params.editFlags.canPaste },
+              { role: "selectAll", enabled: params.editFlags.canSelectAll },
+            ],
+            languages,
+            environment.displayName,
+          ),
         );
 
         void runPromise(

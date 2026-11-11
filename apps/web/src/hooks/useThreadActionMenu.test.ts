@@ -17,6 +17,9 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
+// The locale setup loads React before this direct-hook test installs its mock.
+vi.hoisted(() => vi.resetModules());
+
 const state = vi.hoisted(() => ({
   granted: new Set<string>(),
   effects: [] as string[],
@@ -38,6 +41,8 @@ vi.mock("../components/CustomSnoozeDialog", () => ({ requestCustomSnooze: vi.fn(
 vi.mock("react", () => ({
   useCallback: (callback: unknown) => callback,
   useMemo: (factory: () => unknown) => factory(),
+  useSyncExternalStore: (_subscribe: unknown, _read: unknown, serverSnapshot: () => unknown) =>
+    serverSnapshot(),
 }));
 vi.mock("@tanstack/react-router", () => ({
   useRouter: () => ({ navigate: async () => recordEffect("project-settings") }),

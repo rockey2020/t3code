@@ -49,3 +49,7 @@ node_modules/
 
 # pnpm content-addressable store; never belongs in the repo.
 .pnpm-store/
+
+# Fork maintenance reports are CI artifacts, not source changes.
+/fork-dependency-report.json
+/fork-maintenance-report.json

@@ -1,3 +1,4 @@
+import { vi } from "vite-plus/test";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import type { ManagedPolicyDocument } from "@t3tools/contracts";
@@ -493,3 +494,10 @@ it("a host crosses tracks only to a release that knows its whole database", () =
     }),
   ).toContain("Cannot confirm");
 });
+
+// Preserve upstream updater coverage; forkUpdatePolicy tests the production-disabled policy.
+vi.mock("@t3tools/shared/appUpdatePolicy", () => ({
+  APP_UPDATES_ENABLED: true,
+  APP_UPDATES_DISABLED_REASON:
+    "Application update checks and automatic updates are disabled in this build.",
+}));

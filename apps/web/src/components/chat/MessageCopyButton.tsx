@@ -1,3 +1,5 @@
+import { useTranslation } from "~/i18n/useTranslation";
+import { chatUiMessages } from "./chatUi.messages";
 import { memo, useRef } from "react";
 import { CheckIcon, CopyIcon, type LucideIcon } from "lucide-react";
 import { Button } from "../ui/button";
@@ -11,7 +13,7 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
 export const MessageCopyButton = memo(function MessageCopyButton({
   text,
-  label = "Copy message",
+  label,
   icon: Icon = CopyIcon,
   extraFlavors,
   size = "xs",
@@ -26,6 +28,8 @@ export const MessageCopyButton = memo(function MessageCopyButton({
   variant?: "outline" | "ghost";
   className?: string;
 }) {
+  const t = useTranslation(chatUiMessages);
+  const copyLabel = label ?? t("Copy message");
   const ref = useRef<HTMLButtonElement>(null);
   const { copyToClipboard, isCopied } = useCopyToClipboard<void>({
     onCopy: () => showAnchoredCopySuccessToast(ref),
@@ -39,7 +43,7 @@ export const MessageCopyButton = memo(function MessageCopyButton({
       <TooltipTrigger
         render={
           <Button
-            aria-label={label}
+            aria-label={copyLabel}
             disabled={isCopied}
             onClick={() => copyToClipboard(text)}
             ref={ref}
@@ -53,7 +57,7 @@ export const MessageCopyButton = memo(function MessageCopyButton({
         {isCopied ? <CheckIcon className="size-3 text-primary" /> : <Icon className="size-3" />}
       </TooltipTrigger>
       <TooltipPopup>
-        <p>{label}</p>
+        <p>{copyLabel}</p>
       </TooltipPopup>
     </Tooltip>
   );

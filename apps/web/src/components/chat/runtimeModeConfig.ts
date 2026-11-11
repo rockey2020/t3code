@@ -11,9 +11,16 @@ import {
   ShieldOffIcon,
 } from "lucide-react";
 
+export type RuntimeModeLabel = "Supervised" | "Auto-accept edits" | "Auto" | "Full access";
+export type RuntimeModeDescription =
+  | "Ask before commands and file changes."
+  | "Auto-approve edits, ask before other actions."
+  | "Supported providers approve routine actions; others still ask."
+  | "Allow commands and edits without prompts.";
+
 export const runtimeModeConfig: Record<
   RuntimeMode,
-  { label: string; description: string; icon: LucideIcon }
+  { label: RuntimeModeLabel; description: RuntimeModeDescription; icon: LucideIcon }
 > = {
   "approval-required": {
     label: "Supervised",

@@ -129,3 +129,10 @@ describe("environment release checks", () => {
     await expect(findEnvironmentUpdate("1.0.0", signal)).rejects.toThrow();
   });
 });
+
+// Preserve upstream updater coverage; forkUpdatePolicy tests the production-disabled policy.
+vi.mock("@t3tools/shared/appUpdatePolicy", () => ({
+  APP_UPDATES_ENABLED: true,
+  APP_UPDATES_DISABLED_REASON:
+    "Application update checks and automatic updates are disabled in this build.",
+}));

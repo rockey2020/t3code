@@ -1,3 +1,4 @@
+import { APP_UPDATES_ENABLED } from "@t3tools/shared/appUpdatePolicy";
 import { type ServerConfig, ServerNpmReleaseError } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
@@ -31,6 +32,7 @@ export function npmReleaseFailureMessage(cause: Cause.Cause<unknown>): string {
 
 export const npmReleaseAtom = Atom.family((spec: string) =>
   Atom.make((get) => {
+    if (!APP_UPDATES_ENABLED) return Effect.succeed(null);
     const primary = get(primaryEnvironmentIdAtom);
     // With the desktop's local server turned off there is no primary, so a connected server answers.
     const candidates =

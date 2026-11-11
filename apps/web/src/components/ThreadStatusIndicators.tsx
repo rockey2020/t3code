@@ -6,6 +6,14 @@ import {
 } from "@t3tools/client-runtime/environment";
 import { useSupportsMultiplePullRequests } from "~/hooks/useSupportsMultiplePullRequests";
 import { useStableCallback } from "~/hooks/useStableCallback";
+import { translateNow, readLocale, useLocale } from "~/i18n/useTranslation";
+import { translateSidebarLabel } from "./sidebar/sidebarUi.messages";
+import { globalUiMessages } from "./globalUi.messages";
+import {
+  pullRequestUiMessages,
+  translatePullRequestLabel,
+} from "./pullRequest/pullRequestUi.messages";
+import { coreUiMessages } from "./coreUi.messages";
 
 import { pullRequestDetailToVcsStatus } from "@t3tools/client-runtime/state/pull-requests";
 import {
@@ -69,7 +77,7 @@ export interface PrStatusIndicator {
 }
 
 export interface TerminalStatusIndicator {
-  label: "Terminal process running";
+  label: string;
   colorClass: string;
   pulse: boolean;
 }
@@ -178,19 +186,36 @@ function resolveThreadPullRequestBadgePresentation({
     return {
       Icon: PullRequestGlyph.stack,
       toneClassName: aggregate.toneClassName,
-      label: `Stack of ${badge.layers} ${terminology.plural}, ${aggregate.label.toLowerCase()}`,
+      label: translateNow(pullRequestUiMessages, "Stack of {count} {kind}, {state}", {
+        count: badge.layers,
+        kind: translatePullRequestLabel(terminology.plural, readLocale()),
+        state: translatePullRequestLabel(aggregate.label, readLocale()).toLowerCase(),
+      }),
       text: badge.layers,
     };
   }
   if (number === undefined || url === undefined) return null;
 
-  const tooltip = status?.tooltip ?? `${terminology.shortLabel} #${number}, status pending`;
+  const tooltip =
+    status?.tooltip ??
+    translateNow(pullRequestUiMessages, "{kind} #{number}, status pending", {
+      kind: terminology.shortLabel,
+      number,
+    });
   if (badge?.kind === "pull-request" && badge.others > 0) {
     const aggregate = PULL_REQUEST_STATE_PRESENTATION[badge.state];
     return {
       Icon: aggregate.Icon,
       toneClassName: aggregate.toneClassName,
-      label: `${tooltip}, and ${badge.others} more linked; overall ${aggregate.label.toLowerCase()}`,
+      label: translateNow(
+        pullRequestUiMessages,
+        "{tooltip}, and {count} more linked; overall {state}",
+        {
+          tooltip,
+          count: badge.others,
+          state: translatePullRequestLabel(aggregate.label, readLocale()).toLowerCase(),
+        },
+      ),
       text: `+${badge.others + 1}`,
     };
   }
@@ -352,7 +377,11 @@ export function ThreadPullRequestsMiniList({
           >
             {line.stack ? (
               <span className="ml-auto shrink-0 pl-1 text-3xs">
-                {line.stack.kind === "native" ? "stack" : "chain"} · {line.stack.size}
+                {translateNow(
+                  pullRequestUiMessages,
+                  line.stack.kind === "native" ? "stack" : "chain",
+                )}{" "}
+                · {line.stack.size}
               </span>
             ) : null}
           </ThreadPullRequestMiniListItem>
@@ -419,9 +448,10 @@ export function prStatusIndicator(
   const { shortLabel } = sourceControlClients.get(provider?.kind).changeRequest;
   const state = resolvePullRequestState({ state: pr.state, isDraft: pr.isDraft === true });
 
-  const tooltipLead = `${shortLabel} #${pr.number} - ${state.label}`;
+  const stateLabel = translatePullRequestLabel(state.label, readLocale());
+  const tooltipLead = `${shortLabel} #${pr.number} - ${stateLabel}`;
   return {
-    label: `${shortLabel} ${state.label.toLowerCase()}`,
+    label: `${shortLabel} ${stateLabel.toLowerCase()}`,
     colorClass: state.toneClassName,
     Icon: state.Icon,
     tooltip: `${tooltipLead}: ${pr.title}`,
@@ -504,7 +534,7 @@ export function terminalStatusFromRunningIds(
     return null;
   }
   return {
-    label: "Terminal process running",
+    label: translateNow(globalUiMessages, "Terminal process running"),
     colorClass: "text-teal-600 dark:text-teal-300/90",
     pulse: true,
   };
@@ -534,8 +564,10 @@ export function ThreadTerminalStatusButton({
   const status = terminalStatusFromRunningIds(terminalIds);
   const label =
     terminalIds.length === 1
-      ? "1 terminal process running. Open terminal"
-      : `${terminalIds.length} terminal processes running. Open terminal`;
+      ? translateNow(coreUiMessages, "1 terminal process running. Open terminal")
+      : translateNow(coreUiMessages, "{count} terminal processes running. Open terminal", {
+          count: terminalIds.length,
+        });
   return (
     <Tooltip>
       <TooltipTrigger
@@ -581,8 +613,11 @@ export function ThreadWorktreeIndicator({
 
   const displayPath = formatWorktreePathForDisplay(worktreePath);
   const tooltip = thread.branch
-    ? `Worktree: ${displayPath} (${thread.branch})`
-    : `Worktree: ${displayPath}`;
+    ? translateNow(coreUiMessages, "Worktree: {path} ({branch})", {
+        path: displayPath,
+        branch: thread.branch,
+      })
+    : translateNow(coreUiMessages, "Worktree: {path}", { path: displayPath });
 
   return (
     <Tooltip>
@@ -610,6 +645,8 @@ function ThreadStatusLabel({
   status: ThreadStatusPill;
   compact?: boolean;
 }) {
+  const locale = useLocale();
+  const label = translateSidebarLabel(status.label, locale);
   if (compact) {
     return (
       <Tooltip>
@@ -617,7 +654,7 @@ function ThreadStatusLabel({
           render={
             <span
               role="img"
-              aria-label={status.label}
+              aria-label={label}
               className={`inline-flex size-3.5 shrink-0 items-center justify-center ${status.colorClass}`}
             />
           }
@@ -628,7 +665,7 @@ function ThreadStatusLabel({
             }`}
           />
         </TooltipTrigger>
-        <TooltipPopup side="top">{status.label}</TooltipPopup>
+        <TooltipPopup side="top">{label}</TooltipPopup>
       </Tooltip>
     );
   }
@@ -639,7 +676,7 @@ function ThreadStatusLabel({
         render={
           <span
             role="img"
-            aria-label={status.label}
+            aria-label={label}
             className={`inline-flex items-center gap-1 text-3xs ${status.colorClass}`}
           />
         }
@@ -649,9 +686,9 @@ function ThreadStatusLabel({
             status.pulse ? "motion-safe:animate-status-pulse" : ""
           }`}
         />
-        <span className="hidden md:inline">{status.label}</span>
+        <span className="hidden md:inline">{label}</span>
       </TooltipTrigger>
-      <TooltipPopup side="top">{status.label}</TooltipPopup>
+      <TooltipPopup side="top">{label}</TooltipPopup>
     </Tooltip>
   );
 }
@@ -743,7 +780,10 @@ export function ThreadRowLeadingStatus({ thread }: { thread: SidebarThreadSummar
       {pendingLink ? (
         <PullRequestGlyph.pullRequest
           className="size-3 text-muted-foreground"
-          aria-label={`${changeRequestTerminologyForUrl(pendingLink.url).shortLabel} #${pendingLink.number}, status pending`}
+          aria-label={translateNow(pullRequestUiMessages, "{kind} #{number}, status pending", {
+            kind: changeRequestTerminologyForUrl(pendingLink.url).shortLabel,
+            number: pendingLink.number,
+          })}
         />
       ) : null}
       {threadStatus ? <ThreadStatusLabel status={threadStatus} /> : null}
@@ -760,7 +800,8 @@ export function ThreadRowTrailingStatus({ thread }: { thread: SidebarThreadSumma
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const isRemoteThread = thread.environmentId !== primaryEnvironmentId;
   const remoteEnvLabel = environment?.label ?? null;
-  const threadEnvironmentLabel = isRemoteThread ? (remoteEnvLabel ?? "Remote") : null;
+  const remoteLabel = translateNow(globalUiMessages, "Remote");
+  const threadEnvironmentLabel = isRemoteThread ? (remoteEnvLabel ?? remoteLabel) : null;
   const remoteMachine = resolveEnvironmentMachineKind(environment?.serverConfig ?? null);
   const terminalStatus = terminalStatusFromRunningIds(runningTerminalIds);
 
@@ -794,7 +835,7 @@ export function ThreadRowTrailingStatus({ thread }: { thread: SidebarThreadSumma
           <TooltipTrigger
             render={
               <span
-                aria-label={threadEnvironmentLabel ?? "Remote"}
+                aria-label={threadEnvironmentLabel ?? remoteLabel}
                 className="inline-flex items-center justify-center"
               />
             }

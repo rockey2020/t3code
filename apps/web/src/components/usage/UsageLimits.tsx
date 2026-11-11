@@ -11,7 +11,6 @@ import {
 import { useAtomValue } from "@effect/atom-react";
 import { normalizeProviderAccentColor } from "@t3tools/client-runtime/state/provider-instance-display";
 import {
-  formatResetsIn,
   type LimitPace,
   paceOf,
   paceRemainingPercent,
@@ -22,6 +21,7 @@ import {
 import { GaugeIcon, TrendingDownIcon, TrendingUpIcon } from "lucide-react";
 import { Fragment, useLayoutEffect, useState } from "react";
 
+import { translateNow, useTranslation } from "~/i18n/useTranslation";
 import { usePrimarySettings } from "../../hooks/useSettings";
 import { observeResize } from "../../lib/observeResize";
 import { environmentPresentations } from "../../state/presentation";
@@ -29,6 +29,7 @@ import { useEnvironmentScope, readEnvironmentScope } from "../../state/session";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { formatUpcomingTimestamp } from "../../timestampFormat";
+import { formatResetsIn, formatUsageDuration } from "./usageResetTime";
 import {
   AlertDialog,
   AlertDialogClose,
@@ -42,8 +43,12 @@ import { Button } from "../ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { UsageLimitsPooled } from "./UsageLimitsPooled";
 import { PROVIDER_PRESENTATION } from "./usageProviders";
+import { usageUiMessages } from "./usageUi.messages";
 
-const PACE: Record<LimitPace, { readonly label: string; readonly icon: typeof GaugeIcon }> = {
+const PACE: Record<
+  LimitPace,
+  { readonly label: keyof typeof usageUiMessages; readonly icon: typeof GaugeIcon }
+> = {
   ahead: { label: "Ahead of pace: spending faster than the window elapses", icon: TrendingUpIcon },
   on: { label: "On pace with the window", icon: GaugeIcon },
   under: { label: "Under pace: headroom left for the rest of the window", icon: TrendingDownIcon },
@@ -57,6 +62,7 @@ export function barColor(driver: ServerProvider["driver"]): string {
 }
 
 export function PaceIcon({ pace }: { readonly pace: LimitPace }) {
+  const t = useTranslation(usageUiMessages);
   const Icon = PACE[pace].icon;
   return (
     <Tooltip>
@@ -64,14 +70,14 @@ export function PaceIcon({ pace }: { readonly pace: LimitPace }) {
         render={
           <span
             role="img"
-            aria-label={PACE[pace].label}
+            aria-label={t(PACE[pace].label)}
             className="inline-flex text-muted-foreground"
           />
         }
       >
         <Icon className="size-3.5" aria-hidden />
       </TooltipTrigger>
-      <TooltipPopup side="top">{PACE[pace].label}</TooltipPopup>
+      <TooltipPopup side="top">{t(PACE[pace].label)}</TooltipPopup>
     </Tooltip>
   );
 }
@@ -123,6 +129,7 @@ function WindowBar({
   readonly window: ServerProviderUsageWindow;
   readonly now: number;
 }) {
+  const t = useTranslation(usageUiMessages);
   const timestampFormat = usePrimarySettings((settings) => settings.timestampFormat);
   const remaining = remainingPercent(window);
   const timeLeft = paceRemainingPercent(window, now);
@@ -131,8 +138,8 @@ function WindowBar({
   const resetsAt = window.resetsAt
     ? formatUpcomingTimestamp(window.resetsAt, timestampFormat, now)
     : null;
-  const summary = `${window.label}: ${remaining}% left${
-    timeLeft === null ? "" : `, ${timeLeft}% of the window left`
+  const summary = `${t("{label}: {percent}% left", { label: window.label, percent: remaining })}${
+    timeLeft === null ? "" : t(", {percent}% of the window left", { percent: timeLeft })
   }${resetsIn ? `, ${resetsIn}` : ""}`;
 
   return (
@@ -169,14 +176,17 @@ function WindowBar({
       <TooltipPopup side="top">
         <div className="flex flex-col gap-0.5">
           <span className="text-foreground">
-            {remaining}% left{timeLeft !== null ? ` · ${timeLeft}% of the window left` : ""}
+            {t("{percent}% left", { percent: remaining })}
+            {timeLeft !== null ? t(", {percent}% of the window left", { percent: timeLeft }) : ""}
           </span>
           {timeLeft !== null ? (
-            <span className="text-muted-foreground">The line is where even spending would be.</span>
+            <span className="text-muted-foreground">
+              {t("The line is where even spending would be.")}
+            </span>
           ) : null}
           {resetsAt ? (
             <span className="text-muted-foreground">
-              Resets {resetsAt}
+              {t("Resets {time}", { time: resetsAt })}
               {resetsIn ? ` · ${resetsIn}` : ""}
             </span>
           ) : null}
@@ -199,6 +209,7 @@ export function LimitWindows({
   readonly now: number;
   readonly compact?: boolean;
 }) {
+  const t = useTranslation(usageUiMessages);
   const color = normalizeProviderAccentColor(accentColor) ?? barColor(driver);
   return (
     <div
@@ -216,7 +227,7 @@ export function LimitWindows({
             <span className="flex min-w-0 items-center gap-2 text-xs">
               <span className="truncate text-muted-foreground">{window.label}</span>
               <span className="ms-auto shrink-0 font-medium text-foreground tabular-nums">
-                {remainingPercent(window)}% left
+                {t("{percent}% left", { percent: remainingPercent(window) })}
               </span>
             </span>
             <WindowBar color={color} window={window} now={now} />
@@ -231,7 +242,7 @@ export function LimitWindows({
   );
 }
 
-const OUTCOME_TEXT: Record<ProviderConsumeResetCreditOutcome, string> = {
+const OUTCOME_TEXT: Record<ProviderConsumeResetCreditOutcome, keyof typeof usageUiMessages> = {
   reset: "Reset applied. Your windows have cleared.",
   nothingToReset: "Nothing to reset right now.",
   noCredit: "No reset credit left.",
@@ -255,13 +266,15 @@ export function useResetCredit(environmentId: EnvironmentId) {
     const result = await consume({ environmentId, input: choice.input });
     setBusy(false);
     if (result._tag === "Success") {
-      setStatus(result.value.warning ?? OUTCOME_TEXT[result.value.outcome]);
+      setStatus(
+        result.value.warning ?? translateNow(usageUiMessages, OUTCOME_TEXT[result.value.outcome]),
+      );
       return;
     }
     setStatus(
       "error" in result.cause && result.cause.error instanceof Error
         ? result.cause.error.message
-        : "Could not use the reset credit.",
+        : translateNow(usageUiMessages, "Could not use the reset credit."),
     );
   };
 
@@ -289,17 +302,18 @@ export function ResetCreditDialog({
   readonly onConfirm: () => void;
   readonly disabled?: boolean;
 }) {
+  const t = useTranslation(usageUiMessages);
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogPopup>
         <AlertDialogHeader>
-          <AlertDialogTitle>Use a reset credit?</AlertDialogTitle>
+          <AlertDialogTitle>{t("Use a reset credit?")}</AlertDialogTitle>
           <AlertDialogDescription>{choice?.confirmDescription}</AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogClose render={<Button variant="outline" />}>Cancel</AlertDialogClose>
+          <AlertDialogClose render={<Button variant="outline" />}>{t("Cancel")}</AlertDialogClose>
           <Button disabled={disabled} onClick={onConfirm}>
-            Use credit
+            {t("Use credit")}
           </Button>
         </AlertDialogFooter>
       </AlertDialogPopup>
@@ -307,6 +321,74 @@ export function ResetCreditDialog({
   );
 }
 
+function resetCreditsSummary(
+  credits: ServerProviderResetCredits,
+  now: number,
+  compact = false,
+): string {
+  const expiresIn = credits.nextExpiresAt
+    ? formatUsageDuration(Date.parse(credits.nextExpiresAt) - now)
+    : null;
+  if (credits.availableCount === 0) return translateNow(usageUiMessages, "No reset credits banked");
+  const banked = compact
+    ? translateNow(usageUiMessages, "{count} banked", { count: credits.availableCount })
+    : credits.availableCount === 1
+      ? translateNow(usageUiMessages, "1 reset credit banked")
+      : translateNow(usageUiMessages, "{count} reset credits banked", {
+          count: credits.availableCount,
+        });
+  if (expiresIn === null) return banked;
+  return translateNow(
+    usageUiMessages,
+    compact ? "{summary} · expires in {duration}" : "{summary} · next expires in {duration}",
+    { summary: banked, duration: expiresIn },
+  );
+}
+
+/** Shared words reset credits in English for mobile; web rewords them from its catalog. */
+export function translatedResetCreditChoices(
+  credits: ServerProviderResetCredits,
+  input: ProviderConsumeResetCreditInput,
+  now: number,
+  compact = false,
+): ReadonlyArray<ResetCreditChoice> {
+  const choices = resetCreditChoices(credits, input, now, compact);
+  const options = credits.options;
+  if (options && "instanceId" in input) {
+    return choices.map((choice, index) => {
+      const option = options[index];
+      if (option === undefined) return choice;
+      const left = translateNow(usageUiMessages, "{label} · {count} left", {
+        label: option.label,
+        count: option.availableCount,
+      });
+      return {
+        ...choice,
+        summary: option.expiresAt
+          ? translateNow(usageUiMessages, "{summary} · expires in {duration}", {
+              summary: left,
+              duration: formatUsageDuration(Date.parse(option.expiresAt) - now),
+            })
+          : left,
+        actionLabel: translateNow(usageUiMessages, "Use@@reset credit"),
+        confirmDescription: translateNow(
+          usageUiMessages,
+          "{label}: {description} This cannot be undone.",
+          { label: option.label, description: option.description },
+        ),
+      };
+    });
+  }
+  return choices.map((choice) => ({
+    ...choice,
+    summary: resetCreditsSummary(credits, now, compact),
+    actionLabel: translateNow(usageUiMessages, "Use reset"),
+    confirmDescription: translateNow(
+      usageUiMessages,
+      "This redeems one credit on your account and clears the current rate-limit windows. It cannot be undone.",
+    ),
+  }));
+}
 export function ResetCredits({
   environmentId,
   input,
@@ -318,12 +400,13 @@ export function ResetCredits({
   readonly credits: ServerProviderResetCredits;
   readonly now: number;
 }) {
+  const t = useTranslation(usageUiMessages);
   const { canManageProviders, choice, confirming, setConfirming, confirm, busy, status, redeem } =
     useResetCredit(environmentId);
   if (credits.availableCount === 0 && status === null) return null;
   return (
     <div className="flex flex-col gap-1 text-xs text-muted-foreground">
-      {resetCreditChoices(credits, input, now).map((choice) => (
+      {translatedResetCreditChoices(credits, input, now).map((choice) => (
         <div key={choice.key} className="flex flex-wrap items-center gap-x-3 gap-y-1">
           <span className="tabular-nums">{choice.summary}</span>
           {choice.availableCount > 0 ? (
@@ -333,7 +416,7 @@ export function ResetCredits({
               disabled={busy || !canManageProviders}
               onClick={() => confirm(choice)}
             >
-              {busy ? "Using…" : choice.actionLabel}
+              {busy ? t("Using…") : choice.actionLabel}
             </Button>
           ) : null}
         </div>

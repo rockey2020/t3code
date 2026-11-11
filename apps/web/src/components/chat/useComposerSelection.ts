@@ -25,6 +25,8 @@ import {
   deriveLockedProvider,
   makeModelDisabledReason,
 } from "../ChatView.logic";
+import { readLocale } from "../../i18n/useTranslation";
+import { translateComposerLabel } from "./composerUi.messages";
 interface ComposerSelectionInput {
   readonly environmentId: EnvironmentId;
   readonly composerDraftTarget: ComposerThreadTarget;
@@ -178,8 +180,8 @@ export function useComposerSelection(input: ComposerSelectionInput) {
     if (modelChangeBlockReason) {
       toastManager.add({
         type: "warning",
-        title: modelChangeBlockReason.title,
-        description: modelChangeBlockReason.description,
+        title: translateComposerLabel(modelChangeBlockReason.title, readLocale()),
+        description: translateComposerLabel(modelChangeBlockReason.description, readLocale()),
       });
       if (options?.focusComposer !== false) scheduleComposerFocus();
       return;

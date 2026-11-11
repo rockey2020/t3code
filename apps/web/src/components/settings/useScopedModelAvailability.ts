@@ -12,6 +12,8 @@ import {
   type ProviderInstanceEntry,
 } from "../../providerInstances";
 import { useEnvironmentProviders, useEnvironments } from "../../state/environments";
+import { useLocale } from "~/i18n/useTranslation";
+import { translateSettingsFeedback } from "./settingsFeedback.messages";
 import { useSettingsScope } from "./SettingsScopeContext";
 
 export function useScopedModelDisabledReason(
@@ -21,6 +23,7 @@ export function useScopedModelDisabledReason(
   const { targets } = useSettingsScope();
   const { environments } = useEnvironments();
   const providersByEnvironment = useEnvironmentProviders();
+  const locale = useLocale();
   return (instanceId: ProviderInstanceId, model: string): string | null => {
     const sourceEntry = entries.find((entry) => entry.instanceId === instanceId);
     const shownGenerator = textGeneratorForSelection(settings, instanceId);
@@ -28,7 +31,14 @@ export function useScopedModelDisabledReason(
       const environment = environments.find(
         (entry) => entry.environmentId === candidate.environmentId,
       );
-      const unavailable = `This model is unavailable on ${environment?.label ?? "a selected environment"}. Select that environment to choose its model separately.`;
+      const unavailable = translateSettingsFeedback(
+        "This model is unavailable on {environment}. Select that environment to choose its model separately.",
+        locale,
+        {
+          environment:
+            environment?.label ?? translateSettingsFeedback("a selected environment", locale),
+        },
+      );
       const generator = textGeneratorForSelection(candidate.settings, instanceId);
       if (shownGenerator !== undefined || generator !== undefined) {
         // Only the shown environment's model list is loaded; elsewhere it must reach the same API.

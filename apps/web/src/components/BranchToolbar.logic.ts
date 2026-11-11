@@ -53,6 +53,21 @@ export function resolveEnvironmentOptionLabel(input: {
   return runtimeLabel ?? savedLabel ?? input.environmentId;
 }
 
+export function resolveRunContextLabel(input: {
+  autoEnvironmentLabel: string | undefined;
+  showEnvironmentIndicator: boolean;
+  activeEnvironmentLabel: string | undefined;
+  workspaceLabel: string;
+  runOnLabel: string;
+}): string {
+  return (
+    input.autoEnvironmentLabel ??
+    (input.showEnvironmentIndicator
+      ? (input.activeEnvironmentLabel ?? input.runOnLabel)
+      : input.workspaceLabel)
+  );
+}
+
 export function shouldShowEnvironmentIndicator(input: {
   activeEnvironment: Pick<EnvironmentOption, "isPrimary"> | null;
   canPickEnvironment: boolean;
@@ -77,6 +92,10 @@ export function shouldShowComposerContextStrip(input: {
 }
 
 // Hysteresis prevents labels and icons from flapping at the width boundary.
+import { translateNow } from "~/i18n/useTranslation";
+
+import { gitUiMessages } from "./gitUi.messages";
+
 const CONTEXT_STRIP_COMPACT_EXPAND_HYSTERESIS_PX = 16;
 
 export function resolveContextStripLabelsCompact(input: {
@@ -90,7 +109,7 @@ export function resolveContextStripLabelsCompact(input: {
 }
 
 export function resolveEnvModeLabel(mode: EnvMode): string {
-  return mode === "worktree" ? "New worktree" : "Current checkout";
+  return translateNow(gitUiMessages, mode === "worktree" ? "New worktree" : "Current checkout");
 }
 
 export const WORKTREE_SUBMODULES_LABELS: Record<WorktreeSubmodules, string> = {
@@ -100,15 +119,23 @@ export const WORKTREE_SUBMODULES_LABELS: Record<WorktreeSubmodules, string> = {
 };
 
 export function resolveCurrentWorkspaceLabel(activeWorktreePath: string | null): string {
-  return activeWorktreePath ? "Current worktree" : resolveEnvModeLabel("local");
+  return activeWorktreePath
+    ? translateNow(gitUiMessages, "Current worktree")
+    : resolveEnvModeLabel("local");
 }
 
 export function resolveLockedWorkspaceLabel(
   activeWorktreePath: string | null,
   effectiveEnvMode: EnvMode,
 ): string {
-  if (activeWorktreePath) return activeWorktreePath.split(/[\\/]/).findLast(Boolean) ?? "Worktree";
-  return effectiveEnvMode === "worktree" ? resolveEnvModeLabel("worktree") : "Local checkout";
+  if (activeWorktreePath) {
+    return (
+      activeWorktreePath.split(/[\\/]/).findLast(Boolean) ?? translateNow(gitUiMessages, "Worktree")
+    );
+  }
+  return effectiveEnvMode === "worktree"
+    ? resolveEnvModeLabel("worktree")
+    : translateNow(gitUiMessages, "Local checkout");
 }
 
 export interface PreviousWorktreeSeed {
@@ -150,7 +177,9 @@ export function resolvePreviousWorktreeSeed(input: {
 }
 
 export function resolvePreviousWorktreeLabel(seed: PreviousWorktreeSeed): string {
-  return seed.branch ? `Previous worktree (${seed.branch})` : "Previous worktree";
+  return seed.branch
+    ? translateNow(gitUiMessages, "Previous worktree ({branch})", { branch: seed.branch })
+    : translateNow(gitUiMessages, "Previous worktree");
 }
 
 export function resolveEffectiveEnvMode(input: {
@@ -212,13 +241,15 @@ export function resolveBranchTriggerLabel(input: {
     startFromOrigin,
   } = input;
   if (!resolvedActiveBranch) {
-    return "Select ref";
+    return translateNow(gitUiMessages, "Select ref");
   }
   if (effectiveEnvMode === "worktree" && !activeWorktreePath) {
     // Only the server can determine a local branch's configured remote.
     return startFromOrigin && resolvedActiveBranchIsRemote === false
-      ? `From ${resolvedActiveBranch} (remote)`
-      : `From ${resolvedActiveBranch}`;
+      ? translateNow(gitUiMessages, "From {branch} (remote)", {
+          branch: resolvedActiveBranch,
+        })
+      : translateNow(gitUiMessages, "From {branch}", { branch: resolvedActiveBranch });
   }
   return resolvedActiveBranch;
 }

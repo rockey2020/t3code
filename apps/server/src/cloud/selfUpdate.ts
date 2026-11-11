@@ -1,3 +1,4 @@
+import { APP_UPDATES_ENABLED, APP_UPDATES_DISABLED_REASON } from "@t3tools/shared/appUpdatePolicy";
 import {
   ServerSelfUpdateError,
   type ServerSelfUpdateCapability,
@@ -53,6 +54,7 @@ export function resolveServerSelfUpdateCapability(input: {
   readonly desktopManaged: boolean;
   readonly launcherManaged: boolean;
 }): ServerSelfUpdateCapability | null {
+  if (!APP_UPDATES_ENABLED) return null;
   if (input.desktopManaged) return "desktop-managed" as const;
   return input.launcherManaged ? ("boot-service" as const) : null;
 }
@@ -333,6 +335,7 @@ export const make = Effect.fn("cloud.server_self_update.make")(function* () {
     update,
     commitDesktopUpdate: Effect.fn("ServerSelfUpdate.commitDesktopUpdate")(
       function (requestId, onHandoffAccepted) {
+        if (!APP_UPDATES_ENABLED) return Effect.fail(failWith(APP_UPDATES_DISABLED_REASON));
         return desktopAppUpdate.commit(requestId, onHandoffAccepted);
       },
     ),

@@ -6,6 +6,7 @@ import type {
 import type { ThreadStructure } from "@t3tools/client-runtime/state/shell";
 import { useState } from "react";
 
+import { useTranslation } from "~/i18n/useTranslation";
 import { InlineButton } from "../ui/button";
 import {
   Dialog,
@@ -17,6 +18,7 @@ import {
 } from "../ui/dialog";
 import { CommandOutputPanel, useCommandOutputStreaming } from "./CommandOutputPanel";
 import { ShellCommandBlock } from "./ShellCommandBlock";
+import { threadPanelUiMessages } from "./threadPanelUi.messages";
 
 export function BackgroundWorkDetails(props: {
   readonly environmentId: EnvironmentId;
@@ -25,14 +27,15 @@ export function BackgroundWorkDetails(props: {
   readonly turnItems: ThreadStructure["turnItems"];
   readonly onOpenThread: (threadId: ThreadId) => void;
 }) {
+  const t = useTranslation(threadPanelUiMessages);
   const [open, setOpen] = useState(false);
   const streamsOutput = useCommandOutputStreaming(props.environmentId);
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger render={<InlineButton />}>Details</DialogTrigger>
+      <DialogTrigger render={<InlineButton />}>{t("Details")}</DialogTrigger>
       <DialogPopup>
         <DialogHeader>
-          <DialogTitle>Background work</DialogTitle>
+          <DialogTitle>{t("Background work")}</DialogTitle>
         </DialogHeader>
         <DialogPanel>
           <div className="space-y-5">
@@ -49,7 +52,7 @@ export function BackgroundWorkDetails(props: {
                 description && description !== command?.trim()
                   ? description
                   : command
-                    ? "Command"
+                    ? t("Command")
                     : task.kind.replaceAll("_", " ");
               const itemId =
                 task.itemId ?? (item?.type === "command_execution" ? item.id : undefined);
@@ -59,7 +62,7 @@ export function BackgroundWorkDetails(props: {
                   <div className="flex items-baseline justify-between gap-3">
                     <h3 className="font-medium">{title}</h3>
                     <span className="shrink-0 text-xs text-muted-foreground">
-                      {task.awaited ? "Waiting" : "Running"}
+                      {task.awaited ? t("Waiting") : t("Running")}
                     </span>
                   </div>
                   {command ? (
@@ -83,7 +86,7 @@ export function BackgroundWorkDetails(props: {
                         props.onOpenThread(childThreadId);
                       }}
                     >
-                      Open thread
+                      {t("Open thread")}
                     </InlineButton>
                   ) : null}
                 </section>

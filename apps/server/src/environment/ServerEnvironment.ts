@@ -1,3 +1,4 @@
+import { APP_UPDATES_ENABLED } from "@t3tools/shared/appUpdatePolicy";
 import {
   EnvironmentId,
   ORCHESTRATION_PROTOCOL_VERSION,
@@ -200,7 +201,10 @@ export const make = Effect.gen(function* () {
     desktopManaged: serverConfig.mode === "desktop",
     launcherManaged: launcher.managed,
   });
-  const serverInstallation = serverSelfUpdate === null ? yield* resolveServerInstallation : null;
+  // Update permission and install ownership are independent. A disabled updater must not
+  // make a desktop/service-managed server look like a manually maintained npm install.
+  const serverInstallation =
+    serverConfig.mode !== "desktop" && !launcher.managed ? yield* resolveServerInstallation : null;
   // Desktop and server ship together; a control fd guarantees requestDesktopUpdate support.
 
   const desktopAppUpdate =
@@ -275,7 +279,7 @@ export const make = Effect.gen(function* () {
       oneTimeSchedules: true,
       freshContext: true,
       scheduledTaskThreadModes: true,
-      npmReleaseLookup: true,
+      ...(APP_UPDATES_ENABLED ? { npmReleaseLookup: true } : {}),
       voiceTranscription: isSpeechPlatformSupported(hostPlatform, hostArchitecture, hostLibc),
       cloudVoiceTranscription: true,
       ...(serverSelfUpdate === null ? {} : { serverSelfUpdate }),

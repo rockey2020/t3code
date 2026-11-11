@@ -6,6 +6,7 @@ import {
 } from "@t3tools/client-runtime/state/runtime";
 import { useRef, useState } from "react";
 
+import { readLocale } from "~/i18n/useTranslation";
 import { useEnvironmentProviders, useEnvironments } from "~/state/environments";
 import { serverEnvironment } from "~/state/server";
 import { useEnvironmentsWithScope } from "~/state/session";
@@ -16,6 +17,7 @@ import {
   getProviderUpdateRunToastView,
   type ProviderUpdateRun,
 } from "./ProviderUpdateLaunchNotification.logic";
+import { translateSidebarLabel } from "./sidebar/sidebarUi.messages";
 import { Button } from "./ui/button";
 import { stackedThreadToast, toastManager } from "./ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
@@ -42,7 +44,9 @@ export function useCheckProviderUpdates() {
           const result = await refreshProviders({ environmentId, input: { refreshModels: true } });
           if (result._tag !== "Failure" || isAtomCommandInterrupted(result)) return [];
           const error = squashAtomCommandFailure(result);
-          return [`${label}: ${error instanceof Error ? error.message : "Refresh failed."}`];
+          return [
+            `${label}: ${error instanceof Error ? error.message : translateSidebarLabel("Refresh failed.", readLocale())}`,
+          ];
         }),
     );
     const lines = failures.flat();
@@ -50,7 +54,7 @@ export function useCheckProviderUpdates() {
     toastManager.add(
       stackedThreadToast({
         type: "error",
-        title: "Could not check provider updates",
+        title: translateSidebarLabel("Could not check provider updates", readLocale()),
         description: <span className="whitespace-pre-line">{lines.join("\n")}</span>,
       }),
     );
@@ -110,7 +114,12 @@ export function useProviderUpdates() {
       toastManager.add(
         stackedThreadToast({
           ...view,
-          description: <span className="whitespace-pre-line">{view.description}</span>,
+          title: translateSidebarLabel(view.title, readLocale()),
+          description: (
+            <span className="whitespace-pre-line">
+              {translateSidebarLabel(view.description, readLocale())}
+            </span>
+          ),
         }),
       );
     }

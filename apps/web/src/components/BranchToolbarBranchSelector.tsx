@@ -200,7 +200,7 @@ export function BranchToolbarBranchSelector({
       })
     ) {
       toastManager.add(
-        stackedThreadToast({ type: "warning", title: WORKTREE_CHANGE_BLOCKED_MESSAGE }),
+        stackedThreadToast({ type: "warning", title: t(WORKTREE_CHANGE_BLOCKED_MESSAGE) }),
       );
       return false;
     }
@@ -726,7 +726,7 @@ export function BranchToolbarBranchSelector({
       statusText={branchStatusText}
       notice={
         refs.some((refName) => isWorktreeChangeBlockedForRef(refName))
-          ? WORKTREE_CHANGE_BLOCKED_MESSAGE
+          ? t(WORKTREE_CHANGE_BLOCKED_MESSAGE)
           : null
       }
       renderItem={renderPickerItem}

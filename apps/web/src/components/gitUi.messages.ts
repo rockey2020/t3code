@@ -1,6 +1,7 @@
 import type { Locale } from "~/i18n/locale";
 
 export const gitUiMessages = {
+  "Stop the current turn to switch worktrees.": "请先停止当前轮次，再切换工作树。",
   "Search refs...": "搜索引用…",
   "No refs found.": "未找到引用。",
   "Start from remote": "从远程分支开始",

@@ -608,12 +608,22 @@ jobs:
           )
           keychain="$signing_dir/signing.keychain-db"
           keychain_password=$(openssl rand -base64 32)
+          echo "::add-mask::$keychain_password"
           security create-keychain -p "$keychain_password" "$keychain"
           security set-keychain-settings -lut 21600 "$keychain"
           security unlock-keychain -p "$keychain_password" "$keychain"
-          security import "$signing_dir/certificate.p12" -k "$keychain" -P "$FORK_MACOS_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          # Keep the repository secret in its modern AES-256 PKCS#12 format.
+          # Apple Security cannot import OpenSSL 3's default PBES2/MAC wrapper.
+          # Rewrap only inside this private, temporary directory, with a fresh
+          # random password, while preserving the exact certificate and key.
+          export T3_FORK_IMPORT_PASSWORD="$keychain_password"
+          openssl pkcs12 -in "$signing_dir/certificate.p12" -passin env:FORK_MACOS_CERTIFICATE_PASSWORD -nocerts -aes256 -out "$signing_dir/private-key.encrypted.pem" -passout env:T3_FORK_IMPORT_PASSWORD
+          openssl pkcs12 -export -inkey "$signing_dir/private-key.encrypted.pem" -passin env:T3_FORK_IMPORT_PASSWORD -in "$signing_dir/certificate.pem" -out "$signing_dir/apple-import.p12" -passout env:T3_FORK_IMPORT_PASSWORD -keypbe PBE-SHA1-3DES -certpbe PBE-SHA1-3DES -macalg sha1 -iter 100000
+          openssl pkcs12 -in "$signing_dir/apple-import.p12" -passin env:T3_FORK_IMPORT_PASSWORD -info -noout
+          security import "$signing_dir/apple-import.p12" -k "$keychain" -P "$T3_FORK_IMPORT_PASSWORD" -T /usr/bin/codesign
+          unset T3_FORK_IMPORT_PASSWORD
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$keychain_password" "$keychain" >/dev/null
-          rm "$signing_dir/certificate.p12"
+          rm "$signing_dir/certificate.p12" "$signing_dir/apple-import.p12" "$signing_dir/private-key.encrypted.pem"
           echo "CSC_KEYCHAIN=$keychain" >> "$GITHUB_ENV"
           echo "T3CODE_MAC_SIGN_CERT_SHA256=$fingerprint" >> "$GITHUB_ENV"
           echo "Fixed self-signed macOS identity imported and fingerprint checked."
@@ -728,7 +738,7 @@ jobs:
           if [[ -f "$signing_dir/signing.keychain-db" ]]; then
             security delete-keychain "$signing_dir/signing.keychain-db"
           fi
-          rm -f "$signing_dir/certificate.p12" "$signing_dir/certificate.pem"
+          rm -f "$signing_dir/certificate.p12" "$signing_dir/certificate.pem" "$signing_dir/apple-import.p12" "$signing_dir/private-key.encrypted.pem"
 
       # The CLI was submitted without waiting so Apple reviews it while the
       # desktop builds. Notarization does not change the archive bytes, but

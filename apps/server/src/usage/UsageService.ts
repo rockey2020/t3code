@@ -473,7 +473,7 @@ export const make = Effect.gen(function* () {
   /**
    * Reads run concurrently, and the caller stores updates in walk order rather
    * than completion order: saved records of deleted transcripts aggregate in
-   * cache order, where the first copy of a duplicate decides its bucket. Untraced: a scan
+   * cache order, where the first copy of a duplicate wins. Untraced: a scan
    * reads thousands of files, so scanTranscriptDir records the counts instead.
    */
   const readFileRecords = Effect.fnUntraced(function* (
@@ -551,8 +551,9 @@ export const make = Effect.gen(function* () {
       }
     }
     const base = parsed.resumed && cached !== undefined ? cached.records : [];
-    const records = dedupeWithinFile([...base, ...parsed.records]);
-    const tailRecords = parsed.tailRecords;
+    const seen = new Set<string>();
+    const records = dedupeWithinFile([...base, ...parsed.records], seen);
+    const tailRecords = dedupeWithinFile(parsed.tailRecords, seen);
 
     return {
       records: tailRecords.length === 0 ? records : [...records, ...tailRecords],
@@ -685,7 +686,7 @@ export const make = Effect.gen(function* () {
       { concurrency: "unbounded" },
     );
 
-    // Scan independent sources together, directories sequentially to bound open files; keep order, since the first copy decides a duplicate's bucket.
+    // Scan independent sources together, directories sequentially to bound open files; preserve order for first-copy dedupe.
     const [transcripts, scanDirs] = yield* Effect.all(
       [Effect.forEach(dirs, (dir) => scanTranscriptDir(dir, windowStartMs)), scans],
       { concurrency: "unbounded" },

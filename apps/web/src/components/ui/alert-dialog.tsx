@@ -1,5 +1,4 @@
 import { AlertDialog as AlertDialogPrimitive } from "@base-ui/react/alert-dialog";
-import { useRender } from "@base-ui/react/use-render";
 
 import { cn } from "~/lib/utils";
 import {
@@ -7,12 +6,7 @@ import {
   DIALOG_MOBILE_SHEET_CLASS,
   DIALOG_POPUP_CLASS,
 } from "~/components/ui/dialog-styles";
-import {
-  ControlledOpenContext,
-  DialogAction,
-  renderRetainedPopup,
-  useDialogActionInitialFocus,
-} from "~/components/ui/dialog";
+import { ControlledOpenContext, renderRetainedPopup } from "~/components/ui/dialog";
 
 function AlertDialog<Payload>(props: AlertDialogPrimitive.Root.Props<Payload>) {
   return (
@@ -57,31 +51,23 @@ function AlertDialogPopup({
   bottomStickOnMobile?: boolean;
   portalContainer?: AlertDialogPrimitive.Portal.Props["container"];
 }) {
-  const { popupRef, initialFocus } = useDialogActionInitialFocus();
-  const popup = useRender({
-    ref: popupRef,
-    render: (
-      <AlertDialogPrimitive.Popup
-        className={cn(
-          DIALOG_POPUP_CLASS,
-          "row-start-2 max-h-full max-w-lg text-popover-foreground",
-          bottomStickOnMobile && DIALOG_MOBILE_SHEET_CLASS,
-          className,
-        )}
-        data-slot="alert-dialog-popup"
-        initialFocus={initialFocus}
-        render={renderRetainedPopup}
-        {...props}
-      />
-    ),
-  });
   return (
     <AlertDialogPortal container={portalContainer}>
       <AlertDialogBackdrop />
       <AlertDialogViewport
         className={cn(bottomStickOnMobile && "max-sm:grid-rows-[1fr_auto] max-sm:p-0 max-sm:pt-12")}
       >
-        {popup}
+        <AlertDialogPrimitive.Popup
+          className={cn(
+            DIALOG_POPUP_CLASS,
+            "row-start-2 max-h-full max-w-lg text-popover-foreground",
+            bottomStickOnMobile && DIALOG_MOBILE_SHEET_CLASS,
+            className,
+          )}
+          data-slot="alert-dialog-popup"
+          render={renderRetainedPopup}
+          {...props}
+        />
       </AlertDialogViewport>
     </AlertDialogPortal>
   );
@@ -160,6 +146,5 @@ export {
   AlertDialogTitle,
   AlertDialogDescription,
   AlertDialogClose,
-  DialogAction as AlertDialogAction,
   AlertDialogViewport,
 };

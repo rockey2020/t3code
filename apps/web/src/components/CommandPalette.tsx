@@ -81,8 +81,6 @@ import {
   UserPlusIcon,
 } from "lucide-react";
 import { openThreadFind } from "./chat/threadFindStore";
-import { dispatchPreviewAction } from "./preview/previewActionBus";
-import { previewBridge } from "./preview/previewBridge";
 import {
   useDeferredValue,
   useEffect,
@@ -167,11 +165,7 @@ import {
   useCommandPaletteMount,
   useCommandPaletteStore,
 } from "../commandPaletteStore";
-import {
-  PULL_REQUESTS_PANEL_REF,
-  selectActiveRightPanel,
-  useRightPanelStore,
-} from "../rightPanelStore";
+import { PULL_REQUESTS_PANEL_REF, useRightPanelStore } from "../rightPanelStore";
 import { getLatestThreadForProject, sortThreads } from "@t3tools/client-runtime/state/thread-sort";
 import {
   cn,
@@ -700,14 +694,6 @@ function OpenCommandPaletteDialog(props: {
   const activeThreadKey = activeThread
     ? scopedThreadKey(scopeThreadRef(activeThread.environmentId, activeThread.id))
     : null;
-  const previewPanelThreadRef = activeThread
-    ? scopeThreadRef(activeThread.environmentId, activeThread.id)
-    : activeDraftThread
-      ? scopeThreadRef(activeDraftThread.environmentId, activeDraftThread.threadId)
-      : null;
-  const activeThreadPreviewOpen = useRightPanelStore(
-    (state) => selectActiveRightPanel(state.byThreadKey, previewPanelThreadRef) === "preview",
-  );
   const supportsThreadFind =
     environments.find((environment) => environment.environmentId === activeThread?.environmentId)
       ?.serverConfig?.threadFind === true;
@@ -1397,20 +1383,6 @@ function OpenCommandPaletteDialog(props: {
       shortcutCommand: "chat.find",
       run: async () => {
         openThreadFind(activeThreadKey);
-      },
-    });
-  }
-
-  if (activeThreadPreviewOpen && previewBridge) {
-    actionItems.push({
-      kind: "action",
-      value: "find-in-browser-page",
-      title: t("Find on page in browser"),
-      searchTerms: ["find", "search", "browser", "preview", "page"],
-      icon: <TextSearchIcon className={ITEM_ICON_CLASS} />,
-      shortcutCommand: "preview.find",
-      run: async () => {
-        dispatchPreviewAction("find");
       },
     });
   }

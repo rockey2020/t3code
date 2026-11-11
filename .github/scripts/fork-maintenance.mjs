@@ -43,23 +43,63 @@ export function releaseComplete(release) {
   );
 }
 
-// An audited release may absorb later fork fixes only while the upstream
-// baseline is unchanged. Otherwise its delta could import main-only features
-// into an older stable tag and must be resolved against that tag explicitly.
+// Normalize against the current upstream only to compute a fork-only delta.
+// The synthetic tree must never become the tagged release source.
+export function normalizedOverlayBase({ run, baseline, auditedFork, upstream, fork }) {
+  if (![baseline, auditedFork, upstream, fork].every((ref) => /^[0-9a-f]{40}$/.test(ref)))
+    throw new Error("Invalid normalized overlay commit");
+  for (const [ancestor, descendant] of [
+    [auditedFork, fork],
+    [baseline, auditedFork],
+    [baseline, upstream],
+    [upstream, fork],
+  ]) {
+    run(["merge-base", "--is-ancestor", ancestor, descendant]);
+  }
+  const tree = run([
+    "merge-tree",
+    "--write-tree",
+    `--merge-base=${baseline}`,
+    auditedFork,
+    upstream,
+  ]).trim();
+  if (!/^[0-9a-f]{40}$/.test(tree)) throw new Error("Invalid normalized overlay tree");
+  return tree;
+}
+
+export function forkOverlayDiff(run, from, to) {
+  return run([
+    "diff",
+    "--binary",
+    from,
+    to,
+    "--",
+    ".",
+    ":(exclude).fork/upstream.json",
+    ":(exclude).fork/release-sources.json",
+    ":(exclude).github/workflows",
+    ":(exclude).github/upstream-workflows",
+  ]);
+}
+
 export function auditedOverlay({
   override,
   fingerprint,
   upstream,
   readBaseline,
   isAncestor,
+  normalize,
   diff,
 }) {
   if (!override) return null;
   if (override.fingerprint === fingerprint) return { source: override.sourceCommit, patch: "" };
   if (!/^[0-9a-f]{40}$/.test(override.forkCommit ?? "")) return null;
-  if (!isAncestor(override.forkCommit) || readBaseline(override.forkCommit) !== upstream)
-    return null;
-  return { source: override.sourceCommit, patch: diff(override.forkCommit) };
+  if (!isAncestor(override.forkCommit))
+    throw new Error("Audited fork is not a current fork ancestor");
+  const baseline = readBaseline(override.forkCommit);
+  const base =
+    baseline === upstream ? override.forkCommit : normalize(baseline, override.forkCommit);
+  return { source: override.sourceCommit, patch: diff(base) };
 }
 
 // Build an immutable content-only source commit without introducing new
@@ -282,19 +322,9 @@ async function prepare() {
             return false;
           }
         },
-        diff: (ref) =>
-          git([
-            "diff",
-            "--binary",
-            ref,
-            fork,
-            "--",
-            ".",
-            ":(exclude).fork/upstream.json",
-            ":(exclude).fork/release-sources.json",
-            ":(exclude).github/workflows",
-            ":(exclude).github/upstream-workflows",
-          ]),
+        normalize: (baseline, auditedFork) =>
+          normalizedOverlayBase({ run: git, baseline, auditedFork, upstream: state.sha, fork }),
+        diff: (ref) => forkOverlayDiff(git, ref, fork),
       });
       if (audited) {
         if (!/^[0-9a-f]{40}$/.test(audited.source))

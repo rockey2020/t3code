@@ -16,7 +16,7 @@
     "sharp": "0.35.5"
   },
   "devDependencies": {
-    "@astrojs/check": "^0.9.10",
+    "@astrojs/check": "^0.9.12",
     "@vercel/config": "^0.3.0",
     "typescript": "~6.0.3"
   }

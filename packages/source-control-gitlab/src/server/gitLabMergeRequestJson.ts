@@ -18,7 +18,7 @@ import type {
   PullRequestReactionContent,
   PullRequestReferenceCandidate,
   PullRequestReviewDecision,
-  PullRequestConversationThread,
+  PullRequestReviewThread,
   PullRequestReviewerCandidate,
   PullRequestState,
 } from "@t3tools/contracts";
@@ -789,7 +789,7 @@ export interface GitLabDiffRefs {
 }
 
 export interface GitLabDiscussions {
-  readonly threads: ReadonlyArray<PullRequestConversationThread>;
+  readonly threads: ReadonlyArray<PullRequestReviewThread>;
   /** GitLab moves a thread onto each new diff that still has its line; this is the last one. */
   readonly diffRefsByThreadId: ReadonlyMap<string, GitLabDiffRefs>;
   /** First notes of unresolved discussions on the MR itself rather than a diff line. */
@@ -808,7 +808,7 @@ export function decodeDiscussionsJson(
   if (!Result.isSuccess(decoded)) {
     return Result.fail(decoded.failure);
   }
-  const threads: PullRequestConversationThread[] = [];
+  const threads: PullRequestReviewThread[] = [];
   const diffRefsByThreadId = new Map<string, GitLabDiffRefs>();
   const overviewFindingIds: string[] = [];
   for (const entry of decoded.success) {
@@ -816,30 +816,11 @@ export function decodeDiscussionsJson(
     if (!Exit.isSuccess(discussion)) continue;
     const notes = (discussion.value.notes ?? []).filter((note) => note.system !== true);
     const root = notes[0];
-    if (root === undefined) continue;
-    const comments = notes.map((note) => ({
-      id: String(note.id),
-      author: toActor(note.author),
-      body: note.body ?? "",
-      createdAt: note.created_at,
-      url: null,
-    }));
-    const position = root.position;
-    if (!position) {
-      // A thread started on the overview: resolvable, unlike a single comment.
-      if (root.resolvable !== true) continue;
-      if (root.resolved !== true) overviewFindingIds.push(String(root.id));
-      threads.push({
-        id: discussion.value.id,
-        path: null,
-        line: null,
-        side: "right",
-        isResolved: root.resolved === true,
-        isOutdated: false,
-        comments,
-      });
-      continue;
+    const position = root?.position;
+    if (root !== undefined && !position && root.resolvable === true && root.resolved !== true) {
+      overviewFindingIds.push(String(root.id));
     }
+    if (root === undefined || !position) continue;
     let side: "left" | "right";
     let path: string | null;
     let line: number | null | undefined;
@@ -869,7 +850,13 @@ export function decodeDiscussionsJson(
       side,
       isResolved: root.resolved === true,
       isOutdated: false,
-      comments,
+      comments: notes.map((note) => ({
+        id: String(note.id),
+        author: toActor(note.author),
+        body: note.body ?? "",
+        createdAt: note.created_at,
+        url: null,
+      })),
     });
   }
   return Result.succeed({

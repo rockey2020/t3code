@@ -1,0 +1,9 @@
+{
+  "upstream": "pingdotgg/t3code",
+  "upstreamTag": "v0.1.9",
+  "upstreamSha": "24e77473ecf41bc1f7142529c7911c1c1aae1d76",
+  "auditedSourceSha": "cb01101ba460cf24aae99471a5152354a199090c",
+  "forkSha": "300bea880e8556c37d968051ee6c3f0f5478c259",
+  "fingerprint": "dfb17edf74d5",
+  "channel": "stable"
+}

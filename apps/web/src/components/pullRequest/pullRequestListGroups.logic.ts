@@ -15,7 +15,6 @@ import {
   partitionPullRequestsWithPriority,
   pullRequestEntryKey,
   pullRequestEntryViewer,
-  rankPullRequestMatches,
   type EnvironmentPullRequestEntry,
   type PullRequestPartitionsSnapshot,
 } from "./pullRequestList.logic";
@@ -26,7 +25,6 @@ export const pullRequestListEntryId = (target: Parameters<typeof pullRequestSurf
 /** The held rows narrowed to what the reader asked for, in the groups the list shows. */
 export function pullRequestGroups({
   known,
-  baseline,
   providers,
   viewers,
   involvement,
@@ -41,8 +39,6 @@ export function pullRequestGroups({
   partitionsWanted,
 }: {
   known: ReadonlyArray<EnvironmentPullRequestEntry>;
-  /** The text-free rows already loaded, or undefined when the typed filters cannot vet them. */
-  baseline: ReadonlyArray<EnvironmentPullRequestEntry> | undefined;
   providers: PullRequestListResult["providers"];
   viewers: PullRequestListResult["viewers"];
   involvement: PullRequestInvolvement;
@@ -60,33 +56,22 @@ export function pullRequestGroups({
     providers.flatMap((provider) => (provider.searchesOnHost ? [provider.host] : [])),
   );
 
-  const narrowRows = (rows: ReadonlyArray<EnvironmentPullRequestEntry>) => {
-    const involvementEntries = filterPullRequestsByInvolvement(rows, viewers, involvement);
-    return hasLocalFilters
+  const entries = (() => {
+    const involvementEntries = filterPullRequestsByInvolvement(known, viewers, involvement);
+    // Host text searches cover fields absent from rows, so do not narrow their matches locally.
+    // Filter text locally while results are pending or when the host has no text search.
+    const narrowedEntries = hasLocalFilters
       ? involvementEntries.filter((entry) =>
           matchesPullRequestFilters(entry, localFilters, pullRequestEntryViewer(entry, viewers)),
         )
       : involvementEntries;
-  };
-
-  const entries = (() => {
-    const narrowedEntries = narrowRows(known);
     if (text.length === 0) {
       return narrowedEntries.toSorted(comparePullRequestsByRecency);
     }
-    // Host text searches cover fields absent from rows, so do not narrow their matches locally.
-    // Filter text locally while results are pending or when the host has no text search.
-    const matched = narrowedEntries.filter(
+    return narrowedEntries.filter(
       (entry) =>
         (answeredLocally && searchingHosts.has(entry.host)) || matchesPullRequestQuery(entry, text),
     );
-    // Host search matches whole words, so it can miss loaded rows a partial word matches here.
-    // Those follow the host's ranked answer rather than reshuffling it.
-    const listed = new Set(matched.map(pullRequestEntryKey));
-    const missed = narrowRows(baseline ?? []).filter(
-      (entry) => !listed.has(pullRequestEntryKey(entry)) && matchesPullRequestQuery(entry, text),
-    );
-    return missed.length === 0 ? matched : [...matched, ...rankPullRequestMatches(missed, text)];
   })();
 
   const listedPullRequestTabStatuses: Record<string, PullRequestTabStatusSeed> = Object.fromEntries(

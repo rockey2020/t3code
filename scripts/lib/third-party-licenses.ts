@@ -111,7 +111,7 @@ const EMPTY_CONFIG: ThirdPartyLicensesConfig = {
   packageOverrides: [],
 };
 
-const NOTICE_FILE_PATTERN = /^(?:licen[cs]e|copying|notice)(?:[._-].*)?$/i;
+const NOTICE_FILE_PATTERN = /^(?:licen[cs]e|copying|notice|ofl)(?:[._-].*)?$/i;
 const NOTICE_TEXT_EXTENSIONS = new Set([
   "",
   ".0bsd",

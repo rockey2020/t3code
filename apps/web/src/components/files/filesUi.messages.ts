@@ -1,6 +1,16 @@
 import { translate, type Locale } from "~/i18n/locale";
 
 export const filesUiMessages = {
+  "This sheet is empty.": "此工作表为空。",
+  "Preview limited to 250,000 rows, 1,024 columns, and bounded cell text.":
+    "预览最多显示 250,000 行、1,024 列，并限制单元格文本长度。",
+  "Limited to 500 rows and 50 columns.": "最多显示 500 行和 50 列。",
+  "0 bytes": "0 字节",
+  "{count} columns": "{count} 列",
+  "{count} column": "{count} 列",
+  "{count} rows": "{count} 行",
+  "{count} row": "{count} 行",
+  "Sheet {current} of {total}": "工作表 {current} / {total}",
   "This folder is no longer available.": "此文件夹已不可用。",
   "Refresh failed. Retry": "刷新失败，请重试",
   "Some workspace entries are not shown.": "部分工作区条目未显示。",
@@ -178,9 +188,11 @@ export const filesUiMessages = {
   "This browser cannot draw slides.": "此浏览器无法绘制幻灯片。",
   "Preview limited to presentations with 1 to 500 slides.":
     "预览仅支持 1 至 500 张幻灯片的演示文稿。",
+  "{count} slide": "{count} 张幻灯片",
   "{count} slides": "{count} 张幻灯片",
   "Slide {current} of {total}": "第 {current} / {total} 张幻灯片",
   "This workbook has no visible sheets.": "此工作簿没有可见的工作表。",
+  "{count} sheet": "{count} 个工作表",
   "{count} sheets": "{count} 个工作表",
   "This sheet could not be opened.": "无法打开此工作表。",
   "These cells could not be drawn. Try scrolling to another area.":
@@ -189,6 +201,7 @@ export const filesUiMessages = {
   "Select fewer than 200,000 cells to copy.": "请选择少于 200,000 个单元格再复制。",
   "The selected cells could not be copied.": "无法复制所选单元格。",
   "Preview limited to 1,000 pages.": "预览仅限 1,000 页。",
+  "{count} page": "{count} 页",
   "{count} pages": "{count} 页",
   "Open {label}": "打开 {label}",
   "Retry {label}": "重试 {label}",

@@ -270,3 +270,98 @@ for (const scenario of [
     }
   });
 }
+
+NodeTest.test("push validates its snapshot while scheduled and manual runs merge upstream", () => {
+  const directory = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "fork-sync-cadence-"));
+  const run = (cwd, ...args) =>
+    NodeChildProcess.execFileSync("git", args, {
+      cwd,
+      encoding: "utf8",
+      stdio: ["pipe", "pipe", "pipe"],
+      env: { ...process.env, GIT_CONFIG_NOSYSTEM: "1" },
+    }).trim();
+  try {
+    const upstream = NodePath.join(directory, "upstream");
+    NodeFS.mkdirSync(upstream);
+    run(upstream, "init", "--initial-branch=main");
+    run(upstream, "config", "user.name", "Test");
+    run(upstream, "config", "user.email", "test@example.invalid");
+    run(upstream, "config", "commit.gpgSign", "false");
+    NodeFS.writeFileSync(NodePath.join(upstream, "app.txt"), "reviewed baseline\n");
+    run(upstream, "add", "-A");
+    run(upstream, "commit", "-m", "baseline");
+    const baseline = run(upstream, "rev-parse", "HEAD");
+    NodeFS.writeFileSync(NodePath.join(upstream, "app.txt"), "new upstream feature\n");
+    run(upstream, "commit", "-am", "new upstream");
+
+    for (const event of ["push", "schedule", "workflow_dispatch"]) {
+      const fork = NodePath.join(directory, event);
+      run(directory, "clone", "--quiet", upstream, fork);
+      run(fork, "reset", "--hard", baseline);
+      run(fork, "config", "user.name", "Test");
+      run(fork, "config", "user.email", "test@example.invalid");
+      run(fork, "config", "commit.gpgSign", "false");
+      run(fork, "remote", "add", "upstream", upstream);
+      for (const path of [".github/scripts", ".github/workflows", ".fork", "scripts"])
+        NodeFS.mkdirSync(NodePath.join(fork, path), { recursive: true });
+      NodeFS.copyFileSync(
+        new URL("./fork-maintenance.mjs", import.meta.url),
+        NodePath.join(fork, ".github/scripts/fork-maintenance.mjs"),
+      );
+      NodeFS.writeFileSync(
+        NodePath.join(fork, ".github/workflows/fork-maintenance.yml"),
+        "name: fixture\n",
+      );
+      NodeFS.writeFileSync(
+        NodePath.join(fork, "scripts/i18n-upstream.mjs"),
+        "// fixture: no native localization\n",
+      );
+      NodeFS.writeFileSync(
+        NodePath.join(fork, ".fork/config.json"),
+        JSON.stringify({
+          repository: "fixture/fork",
+          repositoryId: 123,
+          upstream: "fixture/upstream",
+        }),
+      );
+      run(fork, "add", "-A");
+      run(fork, "commit", "-m", "fork maintenance");
+      const original = run(fork, "rev-parse", "HEAD");
+      const output = NodePath.join(directory, `${event}-output`);
+      NodeChildProcess.execFileSync(
+        process.execPath,
+        [
+          "--input-type=module",
+          "--eval",
+          `
+        globalThis.fetch = async (url) => {
+          if (url !== 'https://api.github.com/repos/fixture/fork') throw new Error('Unexpected request');
+          return Response.json({ id: 123 });
+        };
+        process.argv = [process.execPath, process.cwd() + '/.github/scripts/fork-maintenance.mjs', 'sync'];
+        await import(process.argv[1]);
+      `,
+        ],
+        {
+          cwd: fork,
+          stdio: ["pipe", "pipe", "pipe"],
+          env: {
+            ...process.env,
+            GITHUB_REPOSITORY: "fixture/fork",
+            GITHUB_EVENT_NAME: event,
+            GITHUB_OUTPUT: output,
+          },
+        },
+      );
+      NodeAssert.equal(NodeFS.readFileSync(output, "utf8"), `original=${original}\n`);
+      NodeAssert.equal(
+        NodeFS.readFileSync(NodePath.join(fork, "app.txt"), "utf8"),
+        event === "push" ? "reviewed baseline\n" : "new upstream feature\n",
+      );
+      NodeAssert.equal(run(fork, "config", "user.name"), "github-actions[bot]");
+      NodeAssert.equal(run(fork, "status", "--porcelain"), "");
+    }
+  } finally {
+    NodeFS.rmSync(directory, { recursive: true, force: true });
+  }
+});

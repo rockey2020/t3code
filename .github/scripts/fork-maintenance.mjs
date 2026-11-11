@@ -170,6 +170,12 @@ async function sync() {
   git(["config", "user.email", "41898282+github-actions[bot]@users.noreply.github.com"]);
   if (!git(["remote"]).split("\n").includes("upstream"))
     git(["remote", "add", "upstream", `https://github.com/${config.upstream}.git`]);
+  // A fork fix must validate its reviewed snapshot, not race new upstream work.
+  // Scheduled and manual maintenance still fetch and merge the latest upstream.
+  if (process.env.GITHUB_EVENT_NAME === "push") {
+    console.log("Push validation keeps the current upstream baseline.");
+    return;
+  }
   git([
     "fetch",
     "--filter=blob:none",

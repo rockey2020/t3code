@@ -609,6 +609,14 @@ jobs:
           keychain="$signing_dir/signing.keychain-db"
           keychain_password=$(openssl rand -base64 32)
           echo "::add-mask::$keychain_password"
+          # Save the original user-domain search list before creating the temporary keychain.
+          export T3_FORK_SIGNING_DIR="$signing_dir"
+          python3 - <<'PY_SAVE'
+          import json, os, pathlib, shlex, subprocess
+          directory = pathlib.Path(os.environ['T3_FORK_SIGNING_DIR'])
+          previous = shlex.split(subprocess.check_output(['security', 'list-keychains', '-d', 'user'], text=True))
+          (directory / 'previous-keychains.json').write_text(json.dumps(previous))
+          PY_SAVE
           security create-keychain -p "$keychain_password" "$keychain"
           security set-keychain-settings -lut 21600 "$keychain"
           security unlock-keychain -p "$keychain_password" "$keychain"
@@ -624,6 +632,33 @@ jobs:
           unset T3_FORK_IMPORT_PASSWORD
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$keychain_password" "$keychain" >/dev/null
           rm "$signing_dir/certificate.p12" "$signing_dir/apple-import.p12" "$signing_dir/private-key.encrypted.pem"
+          # --keychain limits identity selection, but codesign also requires the
+          # keychain in the user search list to find the certificate/private-key pair.
+          python3 - <<'PY_USE'
+          import json, os, pathlib, subprocess
+          directory = pathlib.Path(os.environ['T3_FORK_SIGNING_DIR'])
+          previous = json.loads((directory / 'previous-keychains.json').read_text())
+          keychain = str(directory / 'signing.keychain-db')
+          subprocess.run(['security', 'list-keychains', '-d', 'user', '-s', keychain, *[p for p in previous if p != keychain]], check=True)
+          PY_USE
+          security find-identity -p codesigning "$keychain"
+          printf 'int main(void) { return 0; }\n' > "$signing_dir/signing-probe.c"
+          xcrun clang "$signing_dir/signing-probe.c" -o "$signing_dir/signing-probe"
+          export T3CODE_MAC_SIGN_CERT_SHA256="$fingerprint"
+          export CSC_KEYCHAIN="$keychain"
+          node --input-type=module <<'JS_PROBE'
+          import { readFileSync } from 'node:fs';
+          import { join } from 'node:path';
+          import { runMacCommand, selectPinnedCertificate, verifyMacAppSignature } from './scripts/lib/mac-self-signing.ts';
+          const directory = process.env.T3_FORK_SIGNING_DIR;
+          const fingerprint = process.env.T3CODE_MAC_SIGN_CERT_SHA256;
+          const certificate = selectPinnedCertificate(readFileSync(join(directory, 'certificate.pem'), 'utf8'), fingerprint);
+          const probe = join(directory, 'signing-probe');
+          runMacCommand('codesign', ['--force', '--sign', certificate.fingerprint.replaceAll(':', ''), '--keychain', process.env.CSC_KEYCHAIN, '--identifier', 'com.t3tools.t3code', '--timestamp=none', probe]);
+          verifyMacAppSignature(probe, fingerprint);
+          console.log('The fixed identity passed a native signing and strict verification probe.');
+          JS_PROBE
+          rm "$signing_dir/signing-probe.c" "$signing_dir/signing-probe"
           echo "CSC_KEYCHAIN=$keychain" >> "$GITHUB_ENV"
           echo "T3CODE_MAC_SIGN_CERT_SHA256=$fingerprint" >> "$GITHUB_ENV"
           echo "Fixed self-signed macOS identity imported and fingerprint checked."
@@ -735,10 +770,20 @@ jobs:
         shell: bash
         run: |
           signing_dir="$RUNNER_TEMP/t3-fork-macos-signing"
+          export T3_FORK_SIGNING_DIR="$signing_dir"
+          status=0
+          python3 - <<'PY_RESTORE' || status=$?
+          import json, os, pathlib, subprocess
+          saved = pathlib.Path(os.environ['T3_FORK_SIGNING_DIR']) / 'previous-keychains.json'
+          if saved.exists():
+              previous = json.loads(saved.read_text())
+              subprocess.run(['security', 'list-keychains', '-d', 'user', '-s', *previous], check=True)
+          PY_RESTORE
           if [[ -f "$signing_dir/signing.keychain-db" ]]; then
-            security delete-keychain "$signing_dir/signing.keychain-db"
+            security delete-keychain "$signing_dir/signing.keychain-db" || status=$?
           fi
-          rm -f "$signing_dir/certificate.p12" "$signing_dir/certificate.pem" "$signing_dir/apple-import.p12" "$signing_dir/private-key.encrypted.pem"
+          rm -f "$signing_dir/certificate.p12" "$signing_dir/certificate.pem" "$signing_dir/apple-import.p12" "$signing_dir/private-key.encrypted.pem" "$signing_dir/previous-keychains.json" "$signing_dir/signing-probe.c" "$signing_dir/signing-probe"
+          exit "$status"
 
       # The CLI was submitted without waiting so Apple reviews it while the
       # desktop builds. Notarization does not change the archive bytes, but

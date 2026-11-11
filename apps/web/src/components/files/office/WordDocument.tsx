@@ -67,9 +67,13 @@ export default function WordDocument(props: {
         if (controller.signal.aborted) return;
         setOpened({ pages: first.pages, paint, engine });
         onDetails(
-          translateNow(filesUiMessages, "{count} pages", {
-            count: `${first.pages.length}${first.loading ? "+" : ""}`,
-          }),
+          translateNow(
+            filesUiMessages,
+            first.pages.length === 1 && !first.loading ? "{count} page" : "{count} pages",
+            {
+              count: `${first.pages.length}${first.loading ? "+" : ""}`,
+            },
+          ),
         );
         if (!first.loading) return;
         await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
@@ -79,7 +83,13 @@ export default function WordDocument(props: {
           if (step.pages.length > 1000)
             throw new Error(translateNow(filesUiMessages, "Preview limited to 1,000 pages."));
           setOpened({ pages: step.pages, paint, engine });
-          onDetails(translateNow(filesUiMessages, "{count} pages", { count: step.pages.length }));
+          onDetails(
+            translateNow(
+              filesUiMessages,
+              step.pages.length === 1 ? "{count} page" : "{count} pages",
+              { count: step.pages.length },
+            ),
+          );
           break;
         }
       })

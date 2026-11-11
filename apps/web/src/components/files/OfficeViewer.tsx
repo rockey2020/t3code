@@ -288,10 +288,16 @@ function ExtendedOfficeViewer(props: {
           className="flex min-h-10 shrink-0 flex-wrap items-center gap-x-1 border-b border-border/60 px-3 py-2 text-xs text-muted-foreground tabular-nums"
           role="status"
         >
-          Sheet {page + 1} of {count} · {sheet.rowCount.toLocaleString()} rows ·{" "}
-          {sheet.columns.toLocaleString()} columns
+          {t("Sheet {current} of {total}", { current: page + 1, total: count })} ·{" "}
+          {t(sheet.rowCount === 1 ? "{count} row" : "{count} rows", {
+            count: sheet.rowCount.toLocaleString(locale),
+          })}{" "}
+          ·{" "}
+          {t(sheet.columns === 1 ? "{count} column" : "{count} columns", {
+            count: sheet.columns.toLocaleString(locale),
+          })}
           {fileSize !== undefined
-            ? ` · ${fileSize === 0 ? "0 bytes" : formatAttachmentSize(fileSize)}`
+            ? ` · ${fileSize === 0 ? t("0 bytes") : formatAttachmentSize(fileSize)}`
             : ""}
         </div>
       ) : null}
@@ -299,29 +305,29 @@ function ExtendedOfficeViewer(props: {
         <>
           {props.kind !== "epub" ? (
             <FileSurfaceNotice>
-              Text and images. Layout and embedded objects may differ from the original.
+              {t("Text and images. Layout and embedded objects may differ from the original.")}
             </FileSurfaceNotice>
           ) : null}
           <Suspense fallback={<FileSurfaceLoading />}>
             <DocumentPages
               html={documentPage.html}
               name={`${props.name}: ${documentPage.title}`}
-              details={`${documentDetails}${fileSize !== undefined ? ` · ${fileSize === 0 ? "0 bytes" : formatAttachmentSize(fileSize)}` : ""}`}
+              details={`${documentDetails}${fileSize !== undefined ? ` · ${fileSize === 0 ? t("0 bytes") : formatAttachmentSize(fileSize)}` : ""}`}
             />
           </Suspense>
         </>
       ) : sheet ? (
         <>
           <FileSurfaceNotice>
-            Cell values only. Charts, images, and formatting are not shown.
+            {t("Cell values only. Charts, images, and formatting are not shown.")}
             {sheet.truncated
               ? props.kind === "ods"
-                ? " Limited to 500 rows and 50 columns."
-                : " Preview limited to 250,000 rows, 1,024 columns, and bounded cell text."
+                ? ` ${t("Limited to 500 rows and 50 columns.")}`
+                : ` ${t("Preview limited to 250,000 rows, 1,024 columns, and bounded cell text.")}`
               : ""}
           </FileSurfaceNotice>
           {sheet.rowCount === 0 ? (
-            <p className="p-6 text-xs text-muted-foreground">This sheet is empty.</p>
+            <p className="p-6 text-xs text-muted-foreground">{t("This sheet is empty.")}</p>
           ) : (
             <VirtualTablePreview
               key={page}

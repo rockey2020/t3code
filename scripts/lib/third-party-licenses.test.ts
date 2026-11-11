@@ -318,6 +318,12 @@ describe("third-party license generation", () => {
       "Nested notice\n",
       "utf8",
     );
+    await NodeFSP.mkdir(NodePath.join(fixture.dependencyRoot, "LICENSES"));
+    await NodeFSP.writeFile(
+      NodePath.join(fixture.dependencyRoot, "LICENSES", "OFL-NotoCJK.txt"),
+      "Font copyright and OFL terms\n",
+      "utf8",
+    );
     await NodeFSP.writeFile(
       NodePath.join(fixture.dependencyRoot, "lib", "license_header.js"),
       "require('not-a-license');\n",
@@ -330,7 +336,7 @@ describe("third-party license generation", () => {
     });
 
     expect(manifest.entries.find((entry) => entry.name === "demo-dependency")?.noticeText).toBe(
-      "dist/third-party/NOTICE.txt\n\nNested notice\n\n---\n\nLICENSE\n\nDemo MIT license text",
+      "dist/third-party/NOTICE.txt\n\nNested notice\n\n---\n\nLICENSE\n\nDemo MIT license text\n\n---\n\nLICENSES/OFL-NotoCJK.txt\n\nFont copyright and OFL terms",
     );
   });
 

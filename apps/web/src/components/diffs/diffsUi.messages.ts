@@ -1,4 +1,6 @@
 export const diffsUiMessages = {
+  "This file changed since the diff was loaded. Refresh the diff to expand it.":
+    "加载差异后，此文件已发生变化。请刷新差异后再展开。",
   "Loading diff…": "正在加载差异…",
   "Delete comment": "删除评论",
   "Expand diff": "展开差异",

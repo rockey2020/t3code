@@ -315,7 +315,7 @@ function AboutVersionSection() {
       <SettingsRow
         id={searchableSetting("app-version").id}
         title={<AboutVersionTitle />}
-        description={APP_UPDATES_DISABLED_REASON}
+        description={t(APP_UPDATES_DISABLED_REASON)}
       />
     );
   }

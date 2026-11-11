@@ -62,6 +62,22 @@ export function auditedOverlay({
   return { source: override.sourceCommit, patch: diff(override.forkCommit) };
 }
 
+// Build an immutable content-only source commit without introducing new
+// executable workflow definitions or previously unmerged upstream history.
+export function commitPreparedSource({ worktree, fork, source, message }) {
+  const run = (args) => git(args, { cwd: worktree });
+  run(["merge-base", "--is-ancestor", source, fork]);
+  run(["restore", "--source", fork, "--staged", "--worktree", ".github/workflows"]);
+  run(["add", "-A"]);
+  const tree = run(["write-tree"]);
+  if (
+    run(["rev-parse", `${tree}:.github/workflows`]) !==
+    run(["rev-parse", `${fork}:.github/workflows`])
+  )
+    throw new Error("Prepared source would alter executable workflow definitions.");
+  return run(["commit-tree", tree, "-p", fork, "-p", source, "-m", message]);
+}
+
 async function api(path, options = {}) {
   const response = await fetch(`https://api.github.com/${path}`, {
     ...options,
@@ -296,18 +312,24 @@ async function prepare() {
             cwd: worktree,
             input: `${releasePatch}\n`,
           });
-        // Source branches keep the exact upstream workflow files. The release
-        // is executed by the fork workflow on main, not by these definitions.
         NodeFS.writeFileSync(
           NodePath.resolve(worktree, ".fork/build.json"),
-          `${JSON.stringify({ upstream: config.upstream, upstreamTag: release.tag_name, upstreamSha: source, forkSha: fork, fingerprint, channel: release.channel }, null, 2)}\n`,
+          `${JSON.stringify({ upstream: config.upstream, upstreamTag: release.tag_name, upstreamSha: source, auditedSourceSha: audited?.source ?? null, forkSha: fork, fingerprint, channel: release.channel }, null, 2)}\n`,
         );
-        git(["add", "-A"], { cwd: worktree });
-        git(
-          ["commit", "-m", `build(fork): prepare ${release.tag_name} with Chinese localization`],
-          { cwd: worktree },
-        );
-        const commit = git(["rev-parse", "HEAD"], { cwd: worktree });
+        const publishedMain = git([
+          "ls-remote",
+          "--heads",
+          "origin",
+          `refs/heads/${config.branch}`,
+        ]).split(/\s/)[0];
+        if (publishedMain !== fork)
+          throw new Error("Main changed during preparation; retry against the latest source.");
+        const commit = commitPreparedSource({
+          worktree,
+          fork,
+          source,
+          message: `build(fork): prepare ${release.tag_name} with Chinese localization`,
+        });
         git(["push", "origin", `${commit}:refs/heads/${branch}`]);
         builds.push({
           ref: commit,

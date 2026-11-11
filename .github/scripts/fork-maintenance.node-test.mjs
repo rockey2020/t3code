@@ -1,10 +1,15 @@
 import * as NodeTest from "node:test";
 import * as NodeAssert from "node:assert/strict";
+import * as NodeChildProcess from "node:child_process";
+import * as NodeFS from "node:fs";
+import * as NodeOS from "node:os";
+import * as NodePath from "node:path";
 import {
   releaseChannel,
   selectReleases,
   releaseComplete,
   auditedOverlay,
+  commitPreparedSource,
 } from "./fork-maintenance.mjs";
 
 NodeTest.test("only stable and official nightly tags are admitted", () => {
@@ -68,5 +73,69 @@ NodeTest.test(
       }),
       { source: override.sourceCommit, patch: "" },
     );
+  },
+);
+
+NodeTest.test(
+  "prepared commits preserve tagged app code while inheriting the exact fork workflow tree",
+  () => {
+    const worktree = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "fork-prepared-source-"));
+    const git = (...args) =>
+      NodeChildProcess.execFileSync("git", args, {
+        cwd: worktree,
+        encoding: "utf8",
+        env: { ...process.env, GIT_CONFIG_NOSYSTEM: "1" },
+      }).trim();
+    const write = (path, content) => {
+      const target = NodePath.join(worktree, path);
+      NodeFS.mkdirSync(NodePath.dirname(target), { recursive: true });
+      NodeFS.writeFileSync(target, content);
+    };
+    try {
+      git("init", "--initial-branch=main");
+      git("config", "user.name", "Fork maintenance test");
+      git("config", "user.email", "fork-test@example.invalid");
+      git("config", "commit.gpgSign", "false");
+      write("app.txt", "exact upstream release\n");
+      write(".github/workflows/upstream-only.yml", "name: Old upstream workflow\n");
+      write(".github/workflows/shared.yml", "name: Original shared workflow\n");
+      git("add", "-A");
+      git("commit", "-m", "upstream release");
+      const source = git("rev-parse", "HEAD");
+      git("tag", "v1.0.0");
+
+      write("app.txt", "newer main feature must not leak into the release\n");
+      NodeFS.rmSync(NodePath.join(worktree, ".github/workflows/upstream-only.yml"));
+      write(".github/workflows/shared.yml", "name: Fork shared workflow\n");
+      write(".github/workflows/fork-build.yml", "name: Approved fork build\n");
+      git("add", "-A");
+      git("commit", "-m", "fork main with approved workflows");
+      const fork = git("rev-parse", "HEAD");
+
+      git("checkout", "--detach", source);
+      write("app.txt", "exact upstream release with Chinese patch\n");
+      write("locales/zh-CN.json", '{"hello":"你好"}\n');
+      const commit = commitPreparedSource({
+        worktree,
+        fork,
+        source,
+        message: "prepare localized release",
+      });
+
+      NodeAssert.equal(
+        git("show", `${commit}:app.txt`),
+        "exact upstream release with Chinese patch",
+      );
+      NodeAssert.equal(git("show", `${commit}:locales/zh-CN.json`), '{"hello":"你好"}');
+      NodeAssert.equal(
+        git("rev-parse", `${commit}:.github/workflows`),
+        git("rev-parse", `${fork}:.github/workflows`),
+      );
+      NodeAssert.equal(git("show", "-s", "--format=%P", commit), `${fork} ${source}`);
+      NodeAssert.equal(git("rev-parse", "main"), fork);
+      NodeAssert.equal(git("rev-parse", "v1.0.0"), source);
+    } finally {
+      NodeFS.rmSync(worktree, { recursive: true, force: true });
+    }
   },
 );

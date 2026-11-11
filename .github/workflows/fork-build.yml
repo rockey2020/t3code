@@ -72,6 +72,25 @@ jobs:
           install-args: --filter=t3... --filter=@t3tools/web... --filter=@t3tools/desktop... --filter=@t3tools/scripts...
       - name: Check localization catalogs
         run: node scripts/i18n-export.ts --check
+      - name: Check Chinese localization and disabled updates
+        run: |
+          set -euo pipefail
+          (cd scripts && vp test run --config ../vite.config.ts --dir . fork-i18n.test.ts --maxWorkers=1)
+          vp run --filter @t3tools/desktop ensure:electron
+          (cd apps/desktop && vp test run src/window/menuLocalization.test.ts src/updates/forkUpdatePolicy.test.ts --maxWorkers=1)
+          (cd apps/server && vp test run src/cloud/forkUpdatePolicy.test.ts src/environment/ServerEnvironment.test.ts --maxWorkers=1)
+          (cd apps/web && vp test run --project unit src/i18n/locale.test.ts --maxWorkers=1)
+      - name: Check live language switching
+        timeout-minutes: 10
+        run: |
+          set -euo pipefail
+          node apps/web/node_modules/playwright/cli.js install --only-shell chromium
+          browser=$(find "$HOME/.cache/ms-playwright" -name chrome-headless-shell -type f -print -quit)
+          if [[ -z "$browser" ]]; then echo "Chromium was not installed" >&2; exit 1; fi
+          if ldd "$browser" | grep -q 'not found'; then
+            node apps/web/node_modules/playwright/cli.js install-deps chromium
+          fi
+          (cd apps/web && vp test run --project browser src/i18n/useTranslation.browser.test.tsx --maxWorkers=1)
       - name: Set exact upstream version
         env:
           VERSION: ${{ inputs.version }}
@@ -115,13 +134,15 @@ jobs:
       - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
         with:
           toolchain: stable
+      - uses: ./.github/actions/setup-apt-mirrors
+      - name: Ensure Linux archive dependency
+        timeout-minutes: 5
+        run: command -v patchelf || { sudo apt-get update && sudo apt-get install -y patchelf; }
       - name: Build Windows WSL runtime
         env:
           VERSION: ${{ inputs.version }}
         run: |
           set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y patchelf
           node scripts/update-release-package-versions.ts "$VERSION"
           cargo build --locked --release --manifest-path native/resource-monitor/Cargo.toml
           mkdir -p "$RUNNER_TEMP/cli-resource-monitor/linux-x64"

@@ -249,7 +249,6 @@ function AboutVersionSection() {
               updateState ?? { availableVersion: null, downloadedVersion: null },
             ),
           ),
-          { initialFocus: "confirm" },
         );
       } catch (error) {
         setIsUpdateActionPending(false);

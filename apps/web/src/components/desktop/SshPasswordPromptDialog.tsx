@@ -53,17 +53,11 @@ function setPromptQueue(next: readonly DesktopSshPasswordPromptRequest[]) {
  * that arrives while no dialog is mounted still waits for one.
  */
 export function startSshPasswordPromptQueue(): () => void {
-  const bridge = window.desktopBridge;
-  if (!bridge) return () => undefined;
-  const stopPrompts = bridge.onSshPasswordPrompt((request) => {
-    if (promptQueue.some((queued) => queued.requestId === request.requestId)) return;
-    setPromptQueue([...promptQueue, request]);
-  });
-  const stopSettled = bridge.onSshPasswordPromptSettled(removeSshPasswordPrompt);
-  return () => {
-    stopPrompts();
-    stopSettled();
-  };
+  return (
+    window.desktopBridge?.onSshPasswordPrompt((request) => {
+      setPromptQueue([...promptQueue, request]);
+    }) ?? (() => undefined)
+  );
 }
 
 function subscribePromptQueue(listener: () => void): () => void {
@@ -76,8 +70,7 @@ function subscribePromptQueue(listener: () => void): () => void {
 const readPromptQueue = () => promptQueue;
 
 function removeSshPasswordPrompt(requestId: string) {
-  if (!promptQueue.some((request) => request.requestId === requestId)) return;
-  setPromptQueue(promptQueue.filter((request) => request.requestId !== requestId));
+  if (promptQueue[0]?.requestId === requestId) setPromptQueue(promptQueue.slice(1));
 }
 
 export function SshPasswordPromptDialog() {

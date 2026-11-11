@@ -241,8 +241,7 @@ export default function DiffPanel({
   }));
   const diffLayout = settings.diffLayout;
   const [wordWrap, setWordWrap] = useState(settings.wordWrap);
-  const diffIgnoreWhitespace =
-    useDiffPanelSessionStore((state) => state.ignoreWhitespace) ?? settings.diffIgnoreWhitespace;
+  const [diffIgnoreWhitespace, setDiffIgnoreWhitespace] = useState(settings.diffIgnoreWhitespace);
   const [fileTreeOpen, setFileTreeOpen] = useLocalStorage(
     DIFF_FILE_TREE_STORAGE_KEY,
     false,
@@ -1249,7 +1248,7 @@ export default function DiffPanel({
                 size="sm"
                 pressed={diffIgnoreWhitespace}
                 onPressedChange={(pressed) => {
-                  useDiffPanelSessionStore.getState().setIgnoreWhitespace(Boolean(pressed));
+                  setDiffIgnoreWhitespace(Boolean(pressed));
                 }}
               />
             }

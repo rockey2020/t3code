@@ -58,6 +58,28 @@ export function certificateRequirement(certificate: NodeCrypto.X509Certificate):
   return `certificate leaf = H"${certificate.fingerprint.replaceAll(":", "")}"`;
 }
 
+export function certificateExtractionArgs(app: string, prefix: string): string[] {
+  // codesign's optional long-option arguments must use --name=value.
+  return ["--display", `--extract-certificates=${prefix}`, app];
+}
+
+export function signatureVerificationArgs(
+  app: string,
+  certificate: NodeCrypto.X509Certificate,
+): string[] {
+  const requirement = `identifier "com.t3tools.t3code" and ${certificateRequirement(certificate)}`;
+  // A leading '=' distinguishes literal requirement text from a file path.
+  return [
+    "--verify",
+    "--deep",
+    "--strict",
+    "--verbose=2",
+    "--test-requirement",
+    `=${requirement}`,
+    app,
+  ];
+}
+
 export function runMacCommand(command: string, args: readonly string[]): string {
   return NodeChildProcess.execFileSync(command, args, {
     encoding: "utf8",
@@ -70,19 +92,10 @@ export function verifyMacAppSignature(app: string, certificateSha256: string) {
   const scratch = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-mac-signature-"));
   try {
     const prefix = NodePath.join(scratch, "certificate");
-    runMacCommand("codesign", ["--display", "--extract-certificates", prefix, app]);
+    runMacCommand("codesign", certificateExtractionArgs(app, prefix));
     const leaf = new NodeCrypto.X509Certificate(NodeFS.readFileSync(`${prefix}0`));
     const certificate = selectPinnedCertificate(leaf.toString(), certificateSha256);
-    const requirement = `identifier "com.t3tools.t3code" and ${certificateRequirement(certificate)}`;
-    runMacCommand("codesign", [
-      "--verify",
-      "--deep",
-      "--strict",
-      "--verbose=2",
-      "--test-requirement",
-      requirement,
-      app,
-    ]);
+    runMacCommand("codesign", signatureVerificationArgs(app, certificate));
     return {
       certificateSha256: normalizeCertificateFingerprint(certificate.fingerprint256),
       certificateSubject: certificate.subject,

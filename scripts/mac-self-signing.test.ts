@@ -11,6 +11,8 @@ import {
   resolveMacSelfSignedEnvironment,
   selectPinnedCertificate,
   certificateRequirement,
+  certificateExtractionArgs,
+  signatureVerificationArgs,
   validateSelfSignedMode,
 } from "./lib/mac-self-signing.ts";
 
@@ -70,13 +72,29 @@ it("selects only the pinned self-signed code-signing certificate", () => {
   );
 });
 
-it("pins a certificate leaf without requiring system trust", () => {
+it("encodes codesign certificate paths and a literal pinned requirement without system trust", () => {
   const cert = selectPinnedCertificate(certificate, fingerprint, now);
   assert.equal(
     certificateRequirement(cert),
     `certificate leaf = H"${cert.fingerprint.replaceAll(":", "")}"`,
   );
   assert.notInclude(certificateRequirement(cert), "trusted");
+  const app = "/tmp/release app/T3 Code.app";
+  const prefix = "/tmp/signature check/certificate";
+  assert.deepEqual(certificateExtractionArgs(app, prefix), [
+    "--display",
+    `--extract-certificates=${prefix}`,
+    app,
+  ]);
+  assert.deepEqual(signatureVerificationArgs(app, cert), [
+    "--verify",
+    "--deep",
+    "--strict",
+    "--verbose=2",
+    "--test-requirement",
+    `=identifier "com.t3tools.t3code" and certificate leaf = H"B1C705941543C6EC6FA9296AE62A9DCD75C21EB1"`,
+    app,
+  ]);
 });
 
 it("never permits self-signing on another platform or together with Apple signing", () => {

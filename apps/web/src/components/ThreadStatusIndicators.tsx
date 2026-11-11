@@ -497,7 +497,7 @@ export function resolveDisplayedThreadPr(input: {
     threadBranch !== null &&
     gitStatus !== null &&
     gitStatus.refName === threadBranch &&
-    gitStatus.pr?.state === "open"
+    gitStatus.pr != null
   ) {
     return gitStatus.pr;
   }
@@ -511,12 +511,17 @@ export function resolveDisplayedThreadPrProvider(input: {
   linkedPullRequest?: ThreadLinkedPullRequest | null | undefined;
   linkedPullRequestStatus?: LinkedThreadPullRequestStatus | null | undefined;
 }): VcsStatusResult["sourceControlProvider"] | undefined {
-  const { gitStatus, linkedPullRequest, linkedPullRequestStatus } = input;
+  const { threadBranch, gitStatus, linkedPullRequest, linkedPullRequestStatus } = input;
   if (linkedPullRequest != null) {
     return linkedPullRequestStatus?.sourceControlProvider;
   }
-  if (resolveDisplayedThreadPr(input) !== null) {
-    return gitStatus?.sourceControlProvider;
+  if (
+    threadBranch !== null &&
+    gitStatus !== null &&
+    gitStatus.refName === threadBranch &&
+    gitStatus.pr != null
+  ) {
+    return gitStatus.sourceControlProvider;
   }
 
   return undefined;

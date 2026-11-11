@@ -3,7 +3,7 @@ import type { ServerProviderSkill } from "@t3tools/contracts";
 export type InlineSkill = Pick<ServerProviderSkill, "name" | "displayName">;
 
 export function formatProviderSkillDisplayName(
-  skill: Pick<ServerProviderSkill, "name"> & { readonly displayName?: string | null | undefined },
+  skill: Pick<ServerProviderSkill, "name" | "displayName">,
 ): string {
   return skill.displayName?.trim() || skill.name;
 }

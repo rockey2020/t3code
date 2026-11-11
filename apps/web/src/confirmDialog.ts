@@ -6,19 +6,16 @@ export type ConfirmDialogState =
       readonly status: "confirming";
       readonly message: string;
       readonly variant: ConfirmDialogVariant;
-      readonly initialFocus: ConfirmDialogOptions["initialFocus"];
     }
   | {
       readonly status: "closing";
       readonly message: string;
       readonly variant: ConfirmDialogVariant;
-      readonly initialFocus: ConfirmDialogOptions["initialFocus"];
     };
 
 type PendingConfirmation = {
   readonly message: string;
   readonly variant: ConfirmDialogVariant;
-  readonly initialFocus: ConfirmDialogOptions["initialFocus"];
   readonly resolve: (confirmed: boolean) => void;
 };
 
@@ -72,7 +69,6 @@ export function requestConfirmDialog(
     const pending = {
       message,
       variant: options?.variant ?? "default",
-      initialFocus: options?.initialFocus,
       resolve,
     } satisfies PendingConfirmation;
     if (activeConfirmation || state.status === "closing") {
@@ -81,12 +77,7 @@ export function requestConfirmDialog(
     }
 
     activeConfirmation = pending;
-    publish({
-      status: "confirming",
-      message,
-      variant: pending.variant,
-      initialFocus: pending.initialFocus,
-    });
+    publish({ status: "confirming", message, variant: pending.variant });
   });
 
   return confirmation;
@@ -102,12 +93,7 @@ export function respondToConfirmDialog(confirmed: boolean): void {
   const confirmation = activeConfirmation;
   activeConfirmation = null;
   confirmation.resolve(confirmed);
-  publish({
-    status: "closing",
-    message: state.message,
-    variant: state.variant,
-    initialFocus: state.initialFocus,
-  });
+  publish({ status: "closing", message: state.message, variant: state.variant });
 }
 
 export function completeConfirmDialogClose(): void {
@@ -120,12 +106,7 @@ export function completeConfirmDialogClose(): void {
   }
 
   activeConfirmation = next;
-  publish({
-    status: "confirming",
-    message: next.message,
-    variant: next.variant,
-    initialFocus: next.initialFocus,
-  });
+  publish({ status: "confirming", message: next.message, variant: next.variant });
 }
 
 export function resetConfirmDialogForTests(): void {

@@ -40,10 +40,6 @@ interface AcpSessionProject {
   readonly workspaceRoot: string;
 }
 
-function needsImport(session: AcpRegistrySession) {
-  return session.importedThreadId === null || session.nativeHistoryPending === true;
-}
-
 function reportFailure(title: string, result: AtomCommandResult<unknown, unknown>, locale: Locale) {
   if (result._tag !== "Failure" || isAtomCommandInterrupted(result)) return;
   const error = squashAtomCommandFailure(result);
@@ -240,7 +236,7 @@ function InstanceSessionManagement(
       setSessions((current) =>
         current.map((candidate) =>
           candidate.sessionId === session.sessionId
-            ? { ...candidate, importedThreadId: result.value.threadId, nativeHistoryPending: false }
+            ? { ...candidate, importedThreadId: result.value.threadId }
             : candidate,
         ),
       );
@@ -497,12 +493,12 @@ function InstanceSessionManagement(
                         disabled={
                           !canOperate ||
                           !canImport ||
-                          !needsImport(session) ||
+                          session.importedThreadId !== null ||
                           importingSessionId !== null
                         }
                         onClick={() => void importNativeSession(session)}
                       >
-                        {!needsImport(session)
+                        {session.importedThreadId !== null
                           ? t("Imported")
                           : importingSessionId === session.sessionId
                             ? t("Importing")

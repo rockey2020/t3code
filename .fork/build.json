@@ -1,0 +1,9 @@
+{
+  "upstream": "pingdotgg/t3code",
+  "upstreamTag": "v0.1.10-nightly.20261111.4529",
+  "upstreamSha": "d2c25950b4d9183ea342d5d5fc14c326b9e0172a",
+  "auditedSourceSha": "ddf91de4029f24d8238114b827037a8d2f275adb",
+  "forkSha": "ee7e8a9038233f67175feeb68745c913bec97dbd",
+  "fingerprint": "04308e07fb12",
+  "channel": "nightly"
+}

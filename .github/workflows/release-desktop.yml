@@ -170,6 +170,13 @@ jobs:
         env:
           pnpm_config_cache_dir: ${{ runner.temp }}/pnpm-metadata
 
+      - name: Verify native macOS ARM64 host
+        if: inputs.platform == 'mac'
+        shell: bash
+        run: |
+          test "$(uname -m)" = arm64
+          test "$(node -p 'process.arch')" = arm64
+
       # The CLI archive and the staged app install without a lockfile, so they
       # ask the registry about every package and fetch platform packages the
       # workspace store lacks. They share this registry metadata and store. A

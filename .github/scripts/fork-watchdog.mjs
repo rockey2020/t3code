@@ -27,13 +27,17 @@ export async function recoverMaintenance({ api, config, now }) {
         let complete = false;
         for (let page = 1; page <= 10; page++) {
           const result = await api(
-            `${root}/actions/runs?status=${status}&per_page=100&page=${page}`,
+            `${root}/actions/workflows/${workflow}/runs?branch=${encodeURIComponent(config.branch)}&status=${status}&per_page=100&page=${page}`,
           );
           const batch = result?.workflow_runs;
           const total = result?.total_count;
           diagnostic = `status=${status} attempt=${attempt} page=${page} total=${total} received=${Array.isArray(batch) ? batch.length : "invalid"} unique=${seen.size}`;
           if (!Number.isSafeInteger(total) || total < 0 || !Array.isArray(batch)) {
             diagnostic += " invalid response";
+            break;
+          }
+          if (batch.some((run) => !run || !belongs(run))) {
+            diagnostic += " out-of-scope workflow or branch";
             break;
           }
           expected ??= total;

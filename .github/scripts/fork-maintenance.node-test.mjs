@@ -12,7 +12,38 @@ import {
   normalizedOverlayBase,
   forkOverlayDiff,
   commitPreparedSource,
+  gitOutput,
 } from "./fork-maintenance.mjs";
+
+NodeTest.test("binary diffs retain blank context lines so release patches remain valid", () => {
+  const directory = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "fork-patch-context-"));
+  const execute = (args, options = {}) =>
+    NodeChildProcess.execFileSync("git", args, {
+      cwd: directory,
+      encoding: "utf8",
+      stdio: ["pipe", "pipe", "pipe"],
+      ...options,
+    });
+  try {
+    execute(["init", "--initial-branch=main"]);
+    execute(["config", "user.name", "Test"]);
+    execute(["config", "user.email", "test@example.invalid"]);
+    execute(["config", "commit.gpgSign", "false"]);
+    const file = NodePath.join(directory, "config.txt");
+    NodeFS.writeFileSync(file, "old value\n\n");
+    execute(["add", "config.txt"]);
+    execute(["commit", "-m", "baseline"]);
+    NodeFS.writeFileSync(file, "new value\n\n");
+    const args = ["diff", "--binary", "HEAD"];
+    const patch = gitOutput(args, execute(args));
+    execute(["restore", "config.txt"]);
+    execute(["apply", "--3way", "-"], { input: `${patch}\n` });
+    NodeAssert.equal(NodeFS.readFileSync(file, "utf8"), "new value\n\n");
+    NodeAssert.equal(gitOutput(["rev-parse", "HEAD"], "abc\n"), "abc");
+  } finally {
+    NodeFS.rmSync(directory, { recursive: true, force: true });
+  }
+});
 
 NodeTest.test("only stable and official nightly tags are admitted", () => {
   NodeAssert.equal(releaseChannel("v0.1.9"), "stable");

@@ -5,13 +5,19 @@ import * as NodePath from "node:path";
 import * as NodeURL from "node:url";
 const root = NodePath.resolve(NodePath.dirname(NodeURL.fileURLToPath(import.meta.url)), "../..");
 const config = JSON.parse(NodeFS.readFileSync(NodePath.resolve(root, ".fork/config.json"), "utf8"));
+export function gitOutput(args, output) {
+  return args[0] === "diff" && args.includes("--binary") ? output : output.trim();
+}
 const git = (args, options = {}) =>
-  NodeChildProcess.execFileSync("git", args, {
-    cwd: root,
-    encoding: "utf8",
-    maxBuffer: 32 * 1024 * 1024,
-    ...options,
-  }).trim();
+  gitOutput(
+    args,
+    NodeChildProcess.execFileSync("git", args, {
+      cwd: root,
+      encoding: "utf8",
+      maxBuffer: 32 * 1024 * 1024,
+      ...options,
+    }),
+  );
 const output = (name, value) => {
   if (process.env.GITHUB_OUTPUT)
     NodeFS.appendFileSync(process.env.GITHUB_OUTPUT, `${name}=${value}\n`);
@@ -150,7 +156,7 @@ async function verifyRepository() {
 function archiveUpstreamWorkflows(original) {
   NodeFS.mkdirSync(NodePath.resolve(root, ".github/upstream-workflows"), { recursive: true });
   for (const name of NodeFS.readdirSync(NodePath.resolve(root, ".github/workflows"))) {
-    if (["fork-maintenance.yml", "fork-build.yml"].includes(name)) continue;
+    if (["fork-maintenance.yml", "fork-build.yml", "fork-watchdog.yml"].includes(name)) continue;
     NodeFS.renameSync(
       NodePath.resolve(root, ".github/workflows", name),
       NodePath.resolve(root, ".github/upstream-workflows", name),

@@ -1,0 +1,39 @@
+name: Fork maintenance watchdog
+
+on:
+  schedule:
+    - cron: "11,41 * * * *"
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/scripts/fork-watchdog.mjs
+      - .github/scripts/fork-watchdog.node-test.mjs
+      - .github/workflows/fork-watchdog.yml
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: fork-maintenance-watchdog
+  cancel-in-progress: false
+
+jobs:
+  recover:
+    if: github.repository == 'rockey2020/t3code'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: main
+          sparse-checkout: |
+            .fork
+            .github/scripts
+      - name: Test safe queue recovery
+        run: node --test .github/scripts/fork-watchdog.node-test.mjs
+      - name: Recover stalled maintenance without interrupting active jobs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node .github/scripts/fork-watchdog.mjs

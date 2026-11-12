@@ -18,7 +18,19 @@ function fixture(runs, options = {}) {
   const api = async (path, request = {}) => {
     const root = `repos/${repository}`;
     if (path === root) return { id: options.repositoryId ?? 123 };
-    if (path.startsWith(`${root}/actions/runs?`)) {
+    if (path.startsWith(`${root}/actions/runs?`))
+      return {
+        total_count: 2,
+        workflow_runs:
+          new URLSearchParams(path.split("?")[1]).get("page") === "2"
+            ? []
+            : [run(800, "queued", 0)],
+      };
+    if (
+      path.startsWith(`${root}/actions/workflows/fork-maintenance.yml/runs?`) &&
+      new URLSearchParams(path.split("?")[1]).has("status")
+    ) {
+      NodeAssert.equal(new URLSearchParams(path.split("?")[1]).get("branch"), "main");
       if (options.apiError) throw new Error("GitHub unavailable");
       if (
         options.freshAfterHistory &&
@@ -26,8 +38,15 @@ function fixture(runs, options = {}) {
         !state.runs.some((item) => item.id === 99)
       )
         state.runs.push(run(99, "queued", 0));
-      const status = new URLSearchParams(path.split("?")[1]).get("status");
-      const selected = state.runs.filter((item) => item.status === status);
+      const query = new URLSearchParams(path.split("?")[1]);
+      const status = query.get("status");
+      if (options.inventory) return options.inventory(status, Number(query.get("page") ?? 1));
+      const selected = state.runs.filter(
+        (item) =>
+          item.status === status &&
+          item.path === ".github/workflows/fork-maintenance.yml" &&
+          item.head_branch === "main",
+      );
       return { total_count: options.incomplete ? 101 : selected.length, workflow_runs: selected };
     }
     if (path.startsWith(`${root}/actions/workflows/fork-maintenance.yml/runs?`)) {
@@ -249,3 +268,160 @@ NodeTest.test("history scanning has a fail-closed page limit", async () => {
   await NodeAssert.rejects(f.execute(), /inventory/i);
   NodeAssert.equal(f.state.dispatched, 0);
 });
+
+NodeTest.test("complete paginated inventory finds active maintenance on later pages", async () => {
+  const f = fixture([run(1)], {
+    inventory: (status, page) =>
+      status === "queued"
+        ? { total_count: 2, workflow_runs: [page === 1 ? run(1) : run(2, "queued", 0)] }
+        : { total_count: 0, workflow_runs: [] },
+  });
+  NodeAssert.equal((await f.execute()).status, "active");
+  NodeAssert.equal(f.state.dispatched, 0);
+});
+
+NodeTest.test("transient incomplete inventory requires two complete matching rescans", async () => {
+  let scans = 0;
+  const f = fixture([run(1)], {
+    inventory: (status, page) => {
+      if (status !== "queued") return { total_count: 0, workflow_runs: [] };
+      if (page === 1) scans++;
+      return { total_count: scans === 1 ? 2 : 1, workflow_runs: page === 1 ? [run(1)] : [] };
+    },
+  });
+  NodeAssert.equal((await f.execute()).status, "recovery-dispatched");
+  NodeAssert.ok(scans >= 3);
+  NodeAssert.equal(f.state.dispatched, 1);
+});
+
+for (const [name, inventory] of [
+  ["empty missing page", () => ({ total_count: 2, workflow_runs: [] })],
+  ["duplicate within a page", () => ({ total_count: 2, workflow_runs: [run(1), run(1)] })],
+  ["colliding pages", () => ({ total_count: 2, workflow_runs: [run(1)] })],
+  ["count drift", (_, page) => ({ total_count: page === 1 ? 2 : 1, workflow_runs: [run(page)] })],
+  ["missing count", () => ({ workflow_runs: [run(1)] })],
+  ["invalid runs", () => ({ total_count: 0, workflow_runs: null })],
+  ["page limit", (_, page) => ({ total_count: 1001, workflow_runs: [run(page)] })],
+]) {
+  NodeTest.test(`uncertain inventory fails closed with diagnostics: ${name}`, async () => {
+    const f = fixture([run(1)], { inventory });
+    await NodeAssert.rejects(
+      f.execute(),
+      /Incomplete Actions inventory.*status=queued.*attempt=3.*page=.*total=.*received=.*unique=/,
+    );
+    NodeAssert.equal(f.state.dispatched, 0);
+    NodeAssert.deepEqual(f.state.cancelled, []);
+  });
+}
+
+NodeTest.test("equal counts with changing run identities never authorize recovery", async () => {
+  let scans = 0;
+  const f = fixture([run(1)], {
+    inventory: (status) => ({
+      total_count: status === "queued" ? 1 : 0,
+      workflow_runs: status === "queued" ? [run(++scans)] : [],
+    }),
+  });
+  await NodeAssert.rejects(f.execute(), /changed between scans/);
+  NodeAssert.equal(f.state.dispatched, 0);
+});
+
+NodeTest.test("complete stable paginated stale queues allow exactly one recovery", async () => {
+  const f = fixture([run(1), run(2)], {
+    inventory: (status, page) =>
+      status === "queued"
+        ? { total_count: 2, workflow_runs: [run(page)] }
+        : { total_count: 0, workflow_runs: [] },
+  });
+  NodeAssert.deepEqual(await f.execute(), { status: "recovery-dispatched", runs: [1, 2] });
+  NodeAssert.equal(f.state.dispatched, 1);
+  NodeAssert.deepEqual(f.state.cancelled, []);
+});
+
+NodeTest.test(
+  "an incomplete final status inventory blocks a previously safe candidate",
+  async () => {
+    let scans = 0;
+    const f = fixture([run(1)], {
+      inventory: (status) => {
+        if (status !== "queued") return { total_count: 0, workflow_runs: [] };
+        scans++;
+        return scans <= 2
+          ? { total_count: 1, workflow_runs: [run(1)] }
+          : { total_count: 1, workflow_runs: [] };
+      },
+    });
+    await NodeAssert.rejects(f.execute(), /Incomplete Actions inventory/);
+    NodeAssert.equal(f.state.dispatched, 0);
+    NodeAssert.deepEqual(f.state.cancelled, []);
+  },
+);
+
+NodeTest.test("an invalid scan cannot be bridged by matching scans on either side", async () => {
+  let scans = 0;
+  const f = fixture([run(1)], {
+    inventory: () => {
+      scans++;
+      return scans === 2
+        ? { total_count: 1, workflow_runs: [] }
+        : { total_count: 1, workflow_runs: [run(1)] };
+    },
+  });
+  await NodeAssert.rejects(f.execute(), /Incomplete Actions inventory/);
+  NodeAssert.equal(f.state.dispatched, 0);
+});
+
+NodeTest.test("equal IDs with changing statuses never authorize recovery", async () => {
+  let scans = 0;
+  const f = fixture([run(1)], {
+    inventory: () => ({
+      total_count: 1,
+      workflow_runs: [run(1, ++scans % 2 ? "queued" : "in_progress")],
+    }),
+  });
+  await NodeAssert.rejects(f.execute(), /changed between scans/);
+  NodeAssert.equal(f.state.dispatched, 0);
+});
+
+NodeTest.test(
+  "unrelated workflow queues and repository count noise do not affect maintenance",
+  async () => {
+    const f = fixture([
+      run(1),
+      { ...run(2, "queued", 0), path: ".github/workflows/fork-desktop.yml" },
+      { ...run(3, "in_progress"), head_branch: "feature" },
+    ]);
+    NodeAssert.deepEqual(await f.execute(), { status: "recovery-dispatched", runs: [1] });
+    NodeAssert.equal(f.state.dispatched, 1);
+    NodeAssert.deepEqual(f.state.cancelled, []);
+  },
+);
+
+NodeTest.test("missing target maintenance page still prevents dispatch", async () => {
+  const f = fixture([run(1)], {
+    inventory: (_, page) => ({
+      total_count: 2,
+      workflow_runs: page === 1 ? [run(1)] : [],
+    }),
+  });
+  await NodeAssert.rejects(f.execute(), /page=2 total=2 received=0 unique=1.*empty page/);
+  NodeAssert.equal(f.state.dispatched, 0);
+  NodeAssert.deepEqual(f.state.cancelled, []);
+});
+
+for (const extra of [
+  { ...run(2), path: ".github/workflows/fork-desktop.yml" },
+  { ...run(2), head_branch: "feature" },
+]) {
+  NodeTest.test(
+    `mismatched scoped inventory is refused: ${extra.path} ${extra.head_branch}`,
+    async () => {
+      const f = fixture([run(1)], {
+        inventory: () => ({ total_count: 2, workflow_runs: [run(1), extra] }),
+      });
+      await NodeAssert.rejects(f.execute(), /out-of-scope/);
+      NodeAssert.equal(f.state.dispatched, 0);
+      NodeAssert.deepEqual(f.state.cancelled, []);
+    },
+  );
+}

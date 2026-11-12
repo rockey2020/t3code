@@ -1,3 +1,5 @@
+import type { Locale } from "../../i18n/locale";
+import { translateSettingsLabel } from "./settingsMessages";
 import { HOSTED_APP_CHANNEL } from "~/branding";
 import { isElectron, isSecretsFeatureEnabled } from "~/env";
 import { isMacPlatform, isWindowsPlatform, normalizeSearchText } from "~/lib/utils";
@@ -10,7 +12,6 @@ import {
 } from "@t3tools/client-runtime/source-control-clients";
 import { DEFAULT_KEYBINDINGS } from "@t3tools/shared/keybindings";
 import * as Schema from "effect/Schema";
-import { msg } from "gt-react";
 import { TYPOGRAPHY_ADVANCED_STORAGE_KEY } from "../../appearanceFonts";
 import { writeLocalStorageValue } from "../../hooks/useLocalStorage";
 import { commandLabel } from "./KeybindingsSettings.logic";
@@ -93,40 +94,38 @@ export interface SettingsSearchAvailability {
 }
 
 export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
-  "/settings/diagnostics": msg("Diagnostics"),
-  "/settings/projects": msg("Projects"),
-  "/settings/general": msg("General"),
-  "/settings/appearance": msg("Appearance"),
-  "/settings/chat": msg("Chat"),
-  "/settings/diffs": msg("Diffs & pull requests"),
-  "/settings/keybindings": msg("Keybindings"),
-  "/settings/snap-shot": msg("SnapShots"),
-  "/settings/providers": msg("Providers"),
-  "/settings/threads": msg("Threads"),
-  "/settings/browser": msg("Browser"),
-  "/settings/devices": msg("Devices"),
-  "/settings/scheduled-tasks": msg("Scheduled tasks"),
-  "/settings/source-control": msg("Source control"),
-  "/settings/worktrees": msg("Worktrees"),
-  "/settings/connections": msg("Environments"),
-  "/settings/access": msg("Sharing & access"),
-  "/settings/secrets": msg("Secrets"),
-  "/settings/maintenance": msg("Maintenance"),
-  "/settings/labs": msg("Labs"),
-  "/settings/about": msg("About"),
-  "/settings/voice": msg("Voice"),
-  "/settings/archived": msg("Archive"),
+  "/settings/diagnostics": "Diagnostics",
+  "/settings/projects": "Projects",
+  "/settings/general": "General",
+  "/settings/appearance": "Appearance",
+  "/settings/chat": "Chat",
+  "/settings/diffs": "Diffs & pull requests",
+  "/settings/keybindings": "Keybindings",
+  "/settings/snap-shot": "SnapShots",
+  "/settings/providers": "Providers",
+  "/settings/threads": "Threads",
+  "/settings/browser": "Browser",
+  "/settings/devices": "Devices",
+  "/settings/scheduled-tasks": "Scheduled tasks",
+  "/settings/source-control": "Source control",
+  "/settings/worktrees": "Worktrees",
+  "/settings/connections": "Environments",
+  "/settings/access": "Sharing & access",
+  "/settings/secrets": "Secrets",
+  "/settings/maintenance": "Maintenance",
+  "/settings/labs": "Labs",
+  "/settings/about": "About",
+  "/settings/voice": "Voice",
+  "/settings/archived": "Archive",
 };
 
-/** Sidebar order. A group with a hidden heading is set apart on screen by space alone. */
+/** Sidebar order. A group without a heading is set apart by space alone. */
 export const SETTINGS_NAV_GROUPS: ReadonlyArray<{
-  readonly heading: string;
-  readonly headingHidden?: true;
+  readonly heading: string | null;
   readonly paths: ReadonlyArray<SettingsPath>;
 }> = [
   {
-    heading: msg("Preferences"),
-    headingHidden: true,
+    heading: null,
     paths: [
       "/settings/general",
       "/settings/appearance",
@@ -138,7 +137,7 @@ export const SETTINGS_NAV_GROUPS: ReadonlyArray<{
     ],
   },
   {
-    heading: msg("Agents"),
+    heading: "Agents",
     paths: [
       "/settings/providers",
       "/settings/threads",
@@ -148,11 +147,11 @@ export const SETTINGS_NAV_GROUPS: ReadonlyArray<{
     ],
   },
   {
-    heading: msg("Code"),
+    heading: "Code",
     paths: ["/settings/projects", "/settings/source-control", "/settings/worktrees"],
   },
   {
-    heading: msg("Connections"),
+    heading: "Connections",
     paths: [
       "/settings/connections",
       "/settings/access",
@@ -160,8 +159,7 @@ export const SETTINGS_NAV_GROUPS: ReadonlyArray<{
     ],
   },
   {
-    heading: msg("More"),
-    headingHidden: true,
+    heading: null,
     paths: ["/settings/maintenance", "/settings/labs", "/settings/about", "/settings/archived"],
   },
 ];
@@ -435,13 +433,13 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   {
     id: "project-grouping",
-    title: msg("Project grouping"),
+    title: "Project grouping",
     to: "/settings/general",
     searchTerms: ["combine matching repositories environments sidebar"],
   },
   {
     id: "project-order",
-    title: msg("Project order"),
+    title: "Project order",
     to: "/settings/general",
     searchTerms: ["sort projects sidebar manual created recent"],
   },
@@ -467,7 +465,7 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   {
     id: "working-shelf",
-    title: msg("Working section"),
+    title: "Working section",
     to: "/settings/general",
     searchTerms: ["hide fold running monitoring threads inbox sidebar shelf"],
   },
@@ -499,14 +497,6 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/chat",
     searchTerms: [
       "accessibility a11y screen reader nvda jaws voiceover orca narrator speech announce read aloud messages activity steps",
-    ],
-  },
-  {
-    id: "screen-reader-window-title",
-    title: "Screen reader window title",
-    to: "/settings/chat",
-    searchTerms: [
-      "accessibility a11y screen reader nvda jaws voiceover orca narrator window title tab title alt tab taskbar thread status order working approval",
     ],
   },
   {
@@ -557,7 +547,7 @@ export const SETTINGS_SEARCH_ITEMS = [
     id: "voice-microphone",
     title: "Microphone",
     to: "/settings/voice",
-    searchTerms: ["mic input audio device order priority preferred"],
+    searchTerms: ["mic input audio device"],
   },
   {
     id: "dictation-shortcut-mode",
@@ -692,21 +682,13 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   {
     id: "in-app-notifications",
-    title: msg("In-app notifications"),
+    title: "In-app notifications",
     to: "/settings/general",
     searchTerms: ["notification toast popup completion input approval failure"],
   },
   {
-    id: "language",
-    title: msg("Language"),
-    to: "/settings/general",
-    searchTerms: [
-      "locale translation english deutsch german español spanish français french português portuguese brasil brazilian chinese 中文 japanese 日本語 korean 한국어 russian русский sprache idioma langue 语言 言語 언어 язык",
-    ],
-  },
-  {
     id: "time-format",
-    title: msg("Time format"),
+    title: "Time format",
     to: "/settings/general",
     searchTerms: ["timestamp clock locale system browser os 12 hour 24 hour"],
   },
@@ -829,25 +811,25 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   {
     id: "unpin-confirmation",
-    title: msg("Unpin confirmation"),
+    title: "Unpin confirmation",
     to: "/settings/general",
     searchTerms: ["ask before thread pinned section"],
   },
   {
     id: "archive-confirmation",
-    title: msg("Archive confirmation"),
+    title: "Archive confirmation",
     to: "/settings/general",
     searchTerms: ["ask before thread second click inline action"],
   },
   {
     id: "delete-confirmation",
-    title: msg("Delete confirmation"),
+    title: "Delete confirmation",
     to: "/settings/general",
     searchTerms: ["ask before thread chat history"],
   },
   {
     id: "quit-confirmation",
-    title: msg("Quit shortcut"),
+    title: "Quit shortcut",
     to: "/settings/general",
     searchTerms: ["confirmation desktop app exit direct hold double click press twice"],
     desktopOnly: true,
@@ -1532,7 +1514,7 @@ export function settingsForThisPlatform(
 export function searchSettings(
   query: string,
   items: ReadonlyArray<SettingsSearchItem> = SETTINGS_SEARCH_ITEMS,
-  translate: (message: string) => string = (message) => message,
+  locale: Locale = "en",
 ): ReadonlyArray<SettingsSearchItem> {
   const normalizedQuery = normalizeSearchText(query);
   if (normalizedQuery.length === 0) return [];
@@ -1540,13 +1522,14 @@ export function searchSettings(
 
   return settingsForThisPlatform(items)
     .flatMap((item, index) => {
-      const titles = [normalizeSearchText(item.title), normalizeSearchText(translate(item.title))];
+      const titles = [
+        normalizeSearchText(item.title),
+        normalizeSearchText(translateSettingsLabel(item.title, locale)),
+      ];
       const fields = [
         ...titles,
         normalizeSearchText(SETTINGS_SECTION_LABELS[item.to]),
-        // The labels as displayed, so search also works in the active language.
-        normalizeSearchText(translate(item.title)),
-        normalizeSearchText(translate(SETTINGS_SECTION_LABELS[item.to])),
+        normalizeSearchText(translateSettingsLabel(SETTINGS_SECTION_LABELS[item.to], locale)),
         ...(item.searchTerms ?? []).map(normalizeSearchText),
       ];
       if (!queryTokens.every((token) => fields.some((field) => field.includes(token)))) return [];

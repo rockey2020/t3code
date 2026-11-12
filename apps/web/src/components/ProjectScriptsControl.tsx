@@ -333,29 +333,21 @@ export default function ProjectScriptsControl({
               setActionsMenuOpen({ presentation, scripts: open, imports: false })
             }
           >
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <MenuTrigger
-                    render={
-                      <ThreadDetailsControl
-                        size={isPanel ? "sm" : "icon-xs"}
-                        variant={isPanel ? "ghost" : "outline"}
-                        part="secondary"
-                        panel={isPanel}
-                        aria-label={t("Script actions")}
-                        data-toolbar-control=""
-                      />
-                    }
-                  />
-                }
-              >
-                <ChevronDownIcon
-                  className={isPanel ? THREAD_DETAILS_PANEL_CHEVRON_CLASS : "size-4"}
+            <MenuTrigger
+              render={
+                <ThreadDetailsControl
+                  size={isPanel ? "sm" : "icon-xs"}
+                  variant={isPanel ? "ghost" : "outline"}
+                  part="secondary"
+                  panel={isPanel}
+                  aria-label={t("Script actions")}
                 />
-              </TooltipTrigger>
-              <TooltipPopup side="top">Script actions</TooltipPopup>
-            </Tooltip>
+              }
+            >
+              <ChevronDownIcon
+                className={isPanel ? THREAD_DETAILS_PANEL_CHEVRON_CLASS : "size-4"}
+              />
+            </MenuTrigger>
             <MenuPopup
               align="end"
               {...(isPanel ? { anchor: panelAnchorRef } : {})}

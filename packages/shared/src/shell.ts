@@ -295,21 +295,6 @@ function extractEnvironmentValue(output: string, name: string): string | undefin
   return value.length > 0 ? value : undefined;
 }
 
-/** Reads the values `buildEnvironmentCaptureCommand` printed; unset or empty names are omitted. */
-export function extractEnvironmentValues(
-  output: string,
-  names: ReadonlyArray<string>,
-): Partial<Record<string, string>> {
-  const environment: Partial<Record<string, string>> = {};
-  for (const name of names) {
-    const value = extractEnvironmentValue(output, name);
-    if (value !== undefined) {
-      environment[name] = value;
-    }
-  }
-  return environment;
-}
-
 export type ShellEnvironmentReader = (
   shell: string,
   names: ReadonlyArray<string>,
@@ -335,7 +320,15 @@ export const readEnvironmentFromLoginShell: ShellEnvironmentReader = (
     stdio: ["ignore", "pipe", "ignore"],
   });
 
-  return extractEnvironmentValues(output, names);
+  const environment: Partial<Record<string, string>> = {};
+  for (const name of names) {
+    const value = extractEnvironmentValue(output, name);
+    if (value !== undefined) {
+      environment[name] = value;
+    }
+  }
+
+  return environment;
 };
 
 export type WindowsShellEnvironmentReader = (

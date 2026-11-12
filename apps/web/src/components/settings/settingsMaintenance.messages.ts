@@ -331,10 +331,6 @@ export const settingsMaintenanceMessages = {
     "此应用下载了 {value0}，需要 {version} 或更新版本。",
   "An unexpected error occurred.": "发生了意外错误。",
   "Switch to {label}?": "切换到 {label}？",
-  "Every connected machine is already on {label}.": "所有已连接机器均已使用 {label}。",
-  "No machine can switch to {label} now.": "目前没有机器可以切换到 {label}。",
-  "No machine can switch to {label} now. This only saves the track.":
-    "目前没有机器可以切换到 {label}。此操作仅保存更新渠道。",
   "Every connected machine is already on {label}. This only saves the track.":
     "所有已连接机器都已使用 {label}。这只会保存更新通道。",
   "This app's updates are off here, so reinstall it yourself to switch.":
@@ -560,22 +556,6 @@ export const settingsMaintenanceMessages = {
 
 const DYNAMIC_LABELS = [
   [
-    /^Every connected machine is already on (.+)\. This only saves the track\.$/,
-    "Every connected machine is already on {label}. This only saves the track.",
-    ["label"],
-  ],
-  [
-    /^Every connected machine is already on (.+)\.$/,
-    "Every connected machine is already on {label}.",
-    ["label"],
-  ],
-  [/^No machine can switch to (.+) now\.$/, "No machine can switch to {label} now.", ["label"]],
-  [
-    /^No machine can switch to (.+) now\. This only saves the track\.$/,
-    "No machine can switch to {label} now. This only saves the track.",
-    ["label"],
-  ],
-  [
     /^Could not set up the t3 launcher at ([\s\S]+?)\.$/,
     "Could not set up the t3 launcher at {path}.",
     ["path"],
@@ -718,10 +698,7 @@ export function translateMaintenanceLabel(label: string, locale: Locale): string
           const value = match[index + 1] ?? "";
           return [
             parameter,
-            parameter === "channel" ||
-            parameter === "from" ||
-            parameter === "reason" ||
-            parameter === "label"
+            parameter === "channel" || parameter === "from" || parameter === "reason"
               ? translateMaintenanceLabel(value, locale)
               : value,
           ];

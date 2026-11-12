@@ -55,7 +55,7 @@ const RECORDINGS = {
   message_steering: {
     prompts: [MESSAGE_STEERING_INITIAL_PROMPT, MESSAGE_STEERING_STEER_PROMPT],
     output: "../src/orchestration-v2/testkit/fixtures/message_steering/cursor_transcript.ndjson",
-    steerAfterRunStartPromptIndex: 0,
+    interruptAfterRunStartPromptIndex: 0,
   },
   provider_thread_resume: {
     prompts: [PROVIDER_THREAD_RESUME_FIRST_PROMPT, PROVIDER_THREAD_RESUME_SECOND_PROMPT],
@@ -183,8 +183,8 @@ const recordScenario = Effect.fn("recordScenario")(function* (
     ...("interruptAfterToolStart" in recording
       ? { interruptAfterToolStart: recording.interruptAfterToolStart }
       : {}),
-    ...("steerAfterRunStartPromptIndex" in recording
-      ? { steerAfterRunStartPromptIndex: recording.steerAfterRunStartPromptIndex }
+    ...("interruptAfterRunStartPromptIndex" in recording
+      ? { interruptAfterRunStartPromptIndex: recording.interruptAfterRunStartPromptIndex }
       : {}),
     ...("restartBeforePromptIndex" in recording
       ? { restartBeforePromptIndex: recording.restartBeforePromptIndex }

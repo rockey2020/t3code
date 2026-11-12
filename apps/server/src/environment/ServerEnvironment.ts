@@ -205,12 +205,10 @@ export const make = Effect.gen(function* () {
   // make a desktop/service-managed server look like a manually maintained npm install.
   const serverInstallation =
     serverConfig.mode !== "desktop" && !launcher.managed ? yield* resolveServerInstallation : null;
-  // The desktop reports whether it can install updates; requests travel over its control fd.
+  // Desktop and server ship together; a control fd guarantees requestDesktopUpdate support.
 
   const desktopAppUpdate =
-    serverSelfUpdate === "desktop-managed" &&
-    serverConfig.desktopAppUpdate === true &&
-    serverConfig.desktopTelemetryControlFd !== undefined;
+    serverSelfUpdate === "desktop-managed" && serverConfig.desktopTelemetryControlFd !== undefined;
 
   const databaseMigration = databaseMigrationHead(serverConfig.dbPath);
   const descriptor: ExecutionEnvironmentDescriptor = {
@@ -296,8 +294,6 @@ export const make = Effect.gen(function* () {
       linkFence: true,
       mcpApprovalCodes: true,
       mcpHostedApproval: true,
-      shellThreadFamilies: true,
-      shellOlderSettled: true,
     },
   };
 

@@ -10,9 +10,7 @@ import type { ThreadStructure } from "@t3tools/client-runtime/state/shell";
 import {
   PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
   type ChatAttachment,
-  type ComposerContextRecord,
   type EnvironmentContextRecord,
-  type ResponseContextRecord,
   type EnvironmentId,
   type MessageId,
   type OrchestrationMessageContext,
@@ -44,11 +42,7 @@ import {
   releaseDraftAttachments,
   startAttachmentUpload,
 } from "../../lib/attachmentUploadQueue";
-import { buildMessageContext, isResponseContextRecord } from "../../lib/composerContextRecords";
-import {
-  collectInlineContextIds,
-  removeInlineContextReference,
-} from "../../lib/composerContextReferences";
+import { buildMessageContext } from "../../lib/composerContextRecords";
 import { readFileAsDataUrl } from "../../lib/imageCompression";
 import type { TerminalContextDraft } from "../../lib/terminalContext";
 import type { ReviewCommentContext } from "../../reviewCommentContext";
@@ -92,11 +86,7 @@ interface QueuedRunEditContent {
   readonly previewAnnotations: ReadonlyArray<PreviewAnnotationPayload>;
   readonly threadContexts: ReadonlyArray<ThreadContextRecord>;
   readonly environmentContexts: ReadonlyArray<EnvironmentContextRecord>;
-  readonly replyTo?: ResponseContextRecord | null;
 }
-
-const isDraftOwnedRecord = (record: ComposerContextRecord) =>
-  record.kind === "thread" || record.kind === "environment";
 
 function queuedEditDraftTarget(routeThreadRef: ScopedThreadRef, runId: RunId) {
   return DraftId.make(`queued-edit:${scopedThreadKey(routeThreadRef)}:${runId}`);
@@ -145,12 +135,10 @@ async function submitQueuedRunEdit(input: {
       uploadFiles,
       failedUploadsMessage: t("Retry or remove failed uploads before saving."),
     });
-    // The edit draft owns thread and machine mentions, so a chip removed while editing is dropped.
     const keptRecords = (editing.context?.records ?? []).filter(
       (record) =>
-        !isDraftOwnedRecord(record) &&
-        (!("attachmentId" in record) ||
-          editing.existingAttachments.some((attachment) => attachment.id === record.attachmentId)),
+        !("attachmentId" in record) ||
+        editing.existingAttachments.some((attachment) => attachment.id === record.attachmentId),
     );
     const newRecords =
       buildMessageContext({
@@ -161,7 +149,6 @@ async function submitQueuedRunEdit(input: {
         previewAnnotations: content.previewAnnotations,
         threadContexts: content.threadContexts,
         environmentContexts: content.environmentContexts,
-        replyTo: content.replyTo ?? null,
         attachments: newAttachments.map((attachment, index) => ({
           attachment,
           attachmentId: uploads[editing.existingAttachments.length + index]?.id ?? attachment.id,
@@ -254,28 +241,10 @@ export function useQueuedRunEdit(input: {
     if (activeThreadId === null) return;
     if (editing !== null && editing.runId !== request.runId) clearEditDraft(editing.runId);
     const target = queuedEditDraftTarget(routeThreadRef, request.runId);
-    const sentText = stripAttachmentOnlyBootstrapPrompt(request.text);
-    const context = serverProjection?.messages.find(
-      (message) => message.id === request.messageId,
-    )?.context;
-    const referenced = new Set(collectInlineContextIds(sentText));
-    const records = (context?.records ?? []).filter((record) => referenced.has(record.contextId));
-    // A reply shows above the composer while its message is edited, not as a chip in the text.
-    // Only the reply the text still points at: a removed or replaced one stays behind as a record.
-    const reply = records.find(isResponseContextRecord);
-    const text = reply ? removeInlineContextReference(sentText, reply.contextId).prompt : sentText;
+    const text = stripAttachmentOnlyBootstrapPrompt(request.text);
     const store = useComposerDraftStore.getState();
     store.clearComposerContent(target);
     store.setPrompt(target, text);
-    store.setThreadContexts(
-      target,
-      records.filter((record): record is ThreadContextRecord => record.kind === "thread"),
-    );
-    store.setEnvironmentContexts(
-      target,
-      records.filter((record): record is EnvironmentContextRecord => record.kind === "environment"),
-    );
-    if (reply) store.setReplyTo(target, reply);
     const threadRef = { environmentId, threadId: activeThreadId };
     queuedRunEdits.begin(
       editKey,
@@ -285,7 +254,8 @@ export function useQueuedRunEdit(input: {
         messageId: request.messageId,
         originalText: text,
         existingAttachments: request.attachments,
-        context,
+        context: serverProjection?.messages.find((message) => message.id === request.messageId)
+          ?.context,
       },
       {
         runs: makeQueuedRunsAtom({

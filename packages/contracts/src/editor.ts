@@ -227,16 +227,7 @@ export const buildRemoteOpenUrl = (input: {
     return `${scheme}://ssh/${zedDestination}${encodedZedPath}`;
   }
   const encodedPath = rootedPath.split("/").map(encodeURIComponent).join("/");
-  const plainDestination =
-    input.username === undefined ? input.host : `${input.username}@${input.host}`;
-  // Remote-SSH splits the decoded authority on "+", so a destination containing one must use its
-  // hex-encoded JSON form instead.
-  const destination = plainDestination.includes("+")
-    ? Array.from(
-        new TextEncoder().encode(JSON.stringify({ hostName: input.host, user: input.username })),
-        (byte) => byte.toString(16).padStart(2, "0"),
-      ).join("")
-    : plainDestination;
+  const destination = input.username === undefined ? input.host : `${input.username}@${input.host}`;
   // VS Code opens a bare vscode-remote path as a folder; a trailing position makes it open the file.
   return `${scheme}://vscode-remote/ssh-remote+${encodeURIComponent(destination)}${encodedPath}${input.isFile ? ":1:1" : ""}`;
 };

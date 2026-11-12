@@ -9,7 +9,6 @@ import {
 } from "@t3tools/contracts";
 import { searchableMessageSegments, searchablePlanSegments } from "@t3tools/shared/threadFindText";
 import { countThreadSearchOccurrences } from "@t3tools/shared/threadSearch";
-import { htmlRenderFromToolItem, mcpAppFromToolItem } from "@t3tools/shared/toolOutput";
 import * as Cache from "effect/Cache";
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
@@ -33,9 +32,7 @@ interface FindRow {
 interface FindPayload extends FindRow {
   readonly payload: string;
   readonly entryId: string;
-  readonly runId: OrchestrationV2TurnItem["runId"];
   readonly type: OrchestrationV2TurnItem["type"];
-  readonly emptyText: boolean;
 }
 interface FindDocument extends FindRow {
   readonly entryId: string;
@@ -179,7 +176,7 @@ function resultForSelection(
 export const makeThreadFind = Effect.fn("makeThreadFind")(function* (
   readIndex: (threadId: ThreadId) => Effect.Effect<
     readonly (Omit<FindRow, "position"> & {
-      readonly item: Pick<OrchestrationV2TurnItem, "type" | "runId">;
+      readonly item: Pick<OrchestrationV2TurnItem, "type">;
     })[],
     ProjectionStoreV2Error
   >,
@@ -216,15 +213,11 @@ export const makeThreadFind = Effect.fn("makeThreadFind")(function* (
       turn_item_id: string;
       payload_json: string;
       entry_id: string;
-      run_id: OrchestrationV2TurnItem["runId"];
       item_type: OrchestrationV2TurnItem["type"];
-      empty_text: number | null;
     }>`
       SELECT item.thread_id, item.turn_item_id, item.payload_json,
         COALESCE(json_extract(item.payload_json, '$.messageId'), item.turn_item_id) AS entry_id,
-        json_extract(item.payload_json, '$.runId') AS run_id,
-        json_extract(item.payload_json, '$.type') AS item_type,
-        json_extract(item.payload_json, '$.text') = '' AS empty_text
+        json_extract(item.payload_json, '$.type') AS item_type
       FROM orchestration_v2_projection_turn_items AS item
       JOIN json_each(${sources}) AS wanted
         ON item.thread_id = json_extract(wanted.value, '$.threadId')
@@ -244,9 +237,7 @@ export const makeThreadFind = Effect.fn("makeThreadFind")(function* (
             ...row,
             payload: payload.payload_json,
             entryId: payload.entry_id,
-            runId: payload.run_id,
             type: payload.item_type,
-            emptyText: payload.empty_text === 1,
           });
     });
   });
@@ -320,33 +311,11 @@ export const makeThreadFind = Effect.fn("makeThreadFind")(function* (
             row.item.type,
           ),
         );
-      const loadAll = Effect.fnUntraced(function* (rows: readonly FindRow[]) {
-        const loaded: FindPayload[] = [];
-        for (let start = 0; start < rows.length; start += 128) {
-          loaded.push(...(yield* load(threadId, rows.slice(start, start + 128))));
-        }
-        return loaded;
-      });
-      const payloads = yield* loadAll(candidates);
-      // Only runs with an empty reply can hide its fallback, so other tool payloads stay unread.
-      const emptyReplyRunIds = new Set(
-        payloads.flatMap((row) =>
-          row.type === "assistant_message" && row.emptyText && row.runId !== null
-            ? [row.runId]
-            : [],
-        ),
-      );
-      const toolPayloads = yield* loadAll(
-        index
-          .map((row, position) => ({ ...row, position }))
-          .filter(
-            (row) =>
-              row.item.type === "dynamic_tool" &&
-              row.item.runId !== null &&
-              emptyReplyRunIds.has(row.item.runId),
-          ),
-      );
-      return { payloads, toolPayloads, cwd, sequence, cacheKey, sourceThreadIds };
+      const payloads: FindPayload[] = [];
+      for (let start = 0; start < candidates.length; start += 128) {
+        payloads.push(...(yield* load(threadId, candidates.slice(start, start + 128))));
+      }
+      return { payloads, cwd, sequence, cacheKey, sourceThreadIds };
     },
     (effect) => sql.withTransaction(effect).pipe(NodeSqliteClient.readOnly),
     (effect, input) =>
@@ -365,7 +334,7 @@ export const makeThreadFind = Effect.fn("makeThreadFind")(function* (
         // Release SQLite before decoding and parsing. Both frames describe one snapshot.
         const data = yield* snapshot(input, scans);
         if (data.result) return Stream.succeed(data.result);
-        const { payloads, toolPayloads, cwd, sequence, cacheKey, sourceThreadIds } = data;
+        const { payloads, cwd, sequence, cacheKey, sourceThreadIds } = data;
         const decode = (row: FindPayload) =>
           decodeItem(row.payload).pipe(
             Effect.map((item) => ({ ...row, item })),
@@ -374,43 +343,23 @@ export const makeThreadFind = Effect.fn("makeThreadFind")(function* (
             ),
           );
         // Answers rendered inside question cards must not appear as separate matches.
-        const foldedAnswerRunIds = new Map<string, OrchestrationV2TurnItem["runId"]>();
+        const foldedAnswers = new Set<string>();
         for (const payload of payloads) {
           if (payload.type !== "user_input_request") continue;
           const { item } = yield* decode(payload);
           if (item.type === "user_input_request" && item.questionAnswer)
-            foldedAnswerRunIds.set(`async-answer:${item.questionAnswer.requestId}`, item.runId);
-        }
-        // The timeline hides an empty reply's fallback when its run shows an HTML render or MCP app.
-        const embeddedResultRunIds = new Set<OrchestrationV2TurnItem["runId"]>();
-        for (const payload of toolPayloads) {
-          const { item } = yield* decode(payload);
-          if (
-            item.type === "dynamic_tool" &&
-            ((item.status === "completed" && htmlRenderFromToolItem(item)) ||
-              mcpAppFromToolItem(item))
-          )
-            embeddedResultRunIds.add(item.runId);
+            foldedAnswers.add(`async-answer:${item.questionAnswer.requestId}`);
         }
         const rows = payloads.filter(
           (row) =>
             row.type !== "user_input_request" &&
-            !(row.type === "user_message" && foldedAnswerRunIds.get(row.entryId) === row.runId),
+            !(row.type === "user_message" && foldedAnswers.has(row.entryId)),
         );
         const documents = new Map<number, FindDocument>();
         const count = Effect.fnUntraced(function* (row: FindPayload) {
           const cached = documents.get(row.position);
           if (cached) return cached;
           const decoded = yield* decode(row);
-          if (
-            decoded.item.type === "assistant_message" &&
-            decoded.item.text === "" &&
-            embeddedResultRunIds.has(decoded.item.runId)
-          ) {
-            const document = documentFor(decoded, 0);
-            documents.set(row.position, document);
-            return document;
-          }
           const key = textKey(decoded.item, cwd, input.skills ?? []);
           const segments = yield* Cache.get(
             key.text.length <= 32_768 ? textCache.text : textCache.largeText,

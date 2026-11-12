@@ -14,7 +14,7 @@ import {
 import * as DateTime from "effect/DateTime";
 import { describe, expect, it } from "vite-plus/test";
 
-import { compactBeforeSendTokens } from "./contextWindow.ts";
+import { shouldCompactBeforeSend } from "./contextWindow.ts";
 import type { ThreadStructure } from "./models.ts";
 import { v2Projection } from "./orchestrationV2TestFixtures.ts";
 
@@ -181,7 +181,7 @@ function sendInput(
   };
 }
 
-describe("compactBeforeSendTokens", () => {
+describe("shouldCompactBeforeSend", () => {
   it.each([
     { name: "a stale Claude thread over 200K", expected: true },
     {
@@ -257,8 +257,8 @@ describe("compactBeforeSendTokens", () => {
     { name: "with no conversation but /compact", onlyCompactMessages: true, expected: false },
     { name: "for a typed /compact", text: "/compact keep the plan", expected: false },
   ] as const)("$name", ({ name: _name, expected, ...overrides }) => {
-    expect(compactBeforeSendTokens(sendInput(overrides as Parameters<typeof sendInput>[0]))).toBe(
-      expected ? 293_611 : null,
+    expect(shouldCompactBeforeSend(sendInput(overrides as Parameters<typeof sendInput>[0]))).toBe(
+      expected,
     );
   });
 });

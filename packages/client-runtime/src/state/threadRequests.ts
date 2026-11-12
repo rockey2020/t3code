@@ -168,8 +168,6 @@ export interface ThreadRequestsResolved {
   readonly threadId: ThreadId;
   /** Every request the thread still waits on; drafts for any other request are stale. */
   readonly pendingRequestIds: ReadonlyArray<RuntimeRequestId>;
-  /** Requests that closed without an answer (cancelled or expired), so typed drafts were never sent. */
-  readonly unansweredRequestIds: ReadonlyArray<RuntimeRequestId>;
 }
 
 const threadRequestsResolvedListeners = new Set<(event: ThreadRequestsResolved) => void>();
@@ -200,8 +198,8 @@ function notifyThreadRequestsResolved(event: ThreadRequestsResolved): void {
 }
 
 /**
- * Tracks one thread's announced pending requests. Feed it the runtime requests
- * of each authoritative projection; it notifies on the first one and whenever an
+ * Tracks one thread's announced pending requests. Feed it the pending ids of
+ * each authoritative projection; it notifies on the first one and whenever an
  * announced request is no longer pending. New requests alone stay quiet.
  */
 export function makeThreadRequestsResolvedAnnouncer(
@@ -209,28 +207,20 @@ export function makeThreadRequestsResolvedAnnouncer(
   threadId: ThreadId,
 ) {
   let announced: ReadonlySet<RuntimeRequestId> | null = null;
-  return (
-    runtimeRequests: ReadonlyArray<
-      Pick<OrchestrationV2ThreadProjection["runtimeRequests"][number], "id" | "status">
-    >,
-  ) => {
-    const pendingRequestIds = runtimeRequests.flatMap((request) =>
-      request.status === "pending" ? [request.id] : [],
-    );
+  return (pendingRequestIds: ReadonlyArray<RuntimeRequestId>) => {
     const pending = new Set(pendingRequestIds);
     const resolvedSome = announced === null || [...announced].some((id) => !pending.has(id));
     announced = pending;
-    if (!resolvedSome) return;
-    const unansweredRequestIds = runtimeRequests.flatMap((request) =>
-      request.status === "cancelled" || request.status === "expired" ? [request.id] : [],
-    );
-    notifyThreadRequestsResolved({
-      environmentId,
-      threadId,
-      pendingRequestIds,
-      unansweredRequestIds,
-    });
+    if (resolvedSome) notifyThreadRequestsResolved({ environmentId, threadId, pendingRequestIds });
   };
+}
+
+export function pendingRuntimeRequestIds(
+  projection: Pick<OrchestrationV2ThreadProjection, "runtimeRequests">,
+): RuntimeRequestId[] {
+  return projection.runtimeRequests.flatMap((request) =>
+    request.status === "pending" ? [request.id] : [],
+  );
 }
 
 export function derivePendingThreadRequests(

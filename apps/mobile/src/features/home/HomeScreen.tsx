@@ -240,7 +240,7 @@ function HomeScrollView(props: ComponentProps<typeof ScrollView>) {
 }
 
 function renderHomeScrollView(props: ScrollViewProps) {
-  // The list passes its content and ref in these props; keep the marker inside the real ScrollView.
+  // FlatList clones this with cells and ref; keep the marker inside their actual ScrollView.
   return <HomeScrollView {...props} />;
 }
 
@@ -748,13 +748,7 @@ export function HomeScreen(props: HomeScreenProps) {
   );
 
   const v2ListEmpty =
-    hasSearchQuery && threadSearch.isPending ? (
-      <EmptyState
-        title="Searching thread messages…"
-        detail={`Looking for "${props.searchQuery}" in messages.`}
-        variant={Platform.OS === "android" ? "plain" : undefined}
-      />
-    ) : hasSearchQuery ? (
+    hasSearchQuery && threadSearch.isPending ? undefined : hasSearchQuery ? (
       <EmptyState
         title="No results"
         detail={`No threads matching "${props.searchQuery}".`}

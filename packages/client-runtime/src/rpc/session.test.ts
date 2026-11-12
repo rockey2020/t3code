@@ -5,7 +5,6 @@ import {
   type ServerConfig as ServerConfigType,
   ServerConfigStreamEvent,
   type ServerConfigStreamEvent as ServerConfigStreamEventType,
-  ServerProvider,
   WS_METHODS,
   UsageLimitSourceId,
 } from "@t3tools/contracts";
@@ -185,18 +184,6 @@ const SOURCE_SERVER_CONFIG: ServerConfigType = {
     capabilities: { ...THEME_SERVER_CONFIG.environment.capabilities, usageLimitSources: true },
   },
 };
-const PROVIDER = Schema.decodeSync(ServerProvider)({
-  instanceId: "codex",
-  driver: "codex",
-  enabled: true,
-  installed: true,
-  version: "1.0.0",
-  status: "ready",
-  auth: { status: "authenticated" },
-  checkedAt: "2026-04-10T00:00:00.000Z",
-  models: [{ slug: "gpt", name: "GPT", isCustom: false, capabilities: null }],
-  slashCommands: [{ name: "compact" }],
-});
 const SOURCE_EVENT: ServerConfigStreamEventType = {
   version: 1,
   type: "usageLimitSourcesUpdated",
@@ -686,11 +673,10 @@ describe("RpcSessionFactory", () => {
         const readyFiber = yield* Effect.forkChild(session.ready);
         const socket = yield* awaitSocket(sockets);
         socket.open();
-        yield* completeInitialConfig(
-          socket,
-          encodeServerConfig({ ...SOURCE_SERVER_CONFIG, providers: [PROVIDER] }),
-          { environmentThemes: true, usageLimitSources: true },
-        );
+        yield* completeInitialConfig(socket, encodeServerConfig(SOURCE_SERVER_CONFIG), {
+          environmentThemes: true,
+          usageLimitSources: true,
+        });
         yield* Fiber.join(readyFiber);
 
         const slowSubscriberStarted = yield* Deferred.make<void>();
@@ -750,16 +736,7 @@ describe("RpcSessionFactory", () => {
           SOURCE_EVENT,
           { version: 1, type: "usageLimitSourcesUpdated", payload: { sources: [] } },
         ];
-        // A delta carries no lists; a subscriber that misses it must still get its result.
-        const { models: _models, slashCommands: _commands, skills: _skills, ...status } = PROVIDER;
-        const providerEvent: ServerConfigStreamEventType = {
-          version: 1,
-          type: "providerStatusDeltas",
-          payload: {
-            providers: [{ ...status, checkedAt: "2026-04-10T00:05:00.000Z", message: "Checked" }],
-          },
-        };
-        const allEvents = [providerEvent, ...themeEvents, ...sourceEvents, ...settingsEvents];
+        const allEvents = [...themeEvents, ...sourceEvents, ...settingsEvents];
         const observedByFastSubscriber = yield* Queue.unbounded<ServerConfigStreamEventType>();
         yield* session
           .subscribeServerConfig({ environmentThemes: true, usageLimitSources: true })
@@ -781,11 +758,6 @@ describe("RpcSessionFactory", () => {
           "environmentThemesUpdated",
           "usageLimitSourcesUpdated",
         ]);
-        expect(recovered[1]).toMatchObject({
-          config: {
-            providers: [{ ...PROVIDER, checkedAt: "2026-04-10T00:05:00.000Z", message: "Checked" }],
-          },
-        });
         expect(recovered[2]).toMatchObject({ payload: { themes: [] } });
         expect(recovered[3]).toMatchObject({ payload: { sources: [] } });
 

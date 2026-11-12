@@ -123,12 +123,9 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("ServerEnvironmen
       }
     }),
   );
-  it.effect.each([
-    { desktopAppUpdate: false, advertised: undefined },
-    { desktopAppUpdate: true, advertised: true },
-  ])(
-    "advertises desktop app updates only when the desktop can install them ($desktopAppUpdate)",
-    ({ desktopAppUpdate, advertised }) =>
+  it.effect.each([{ desktopAppUpdate: false }, { desktopAppUpdate: true }])(
+    "keeps updates disabled even when desktop installation is available ($desktopAppUpdate)",
+    ({ desktopAppUpdate }) =>
       Effect.gen(function* () {
         const fs = yield* FileSystem.FileSystem;
         const baseDir = yield* fs.makeTempDirectoryScoped();
@@ -160,10 +157,10 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("ServerEnvironmen
           desktopAppChannelSwitch: capabilities.desktopAppChannelSwitch,
           serverSelfUpdateProgress: capabilities.serverSelfUpdateProgress,
         }).toEqual({
-          serverSelfUpdate: "desktop-managed",
-          desktopAppUpdate: advertised,
-          desktopAppChannelSwitch: advertised,
-          serverSelfUpdateProgress: advertised,
+          serverSelfUpdate: undefined,
+          desktopAppUpdate: undefined,
+          desktopAppChannelSwitch: undefined,
+          serverSelfUpdateProgress: undefined,
         });
       }),
   );

@@ -1,5 +1,5 @@
 /* oxlint-disable react/no-array-index-key -- Spreadsheet rows and columns retain their source positions. */
-import { translateNow, useLocale, useTranslation } from "~/i18n/useTranslation";
+import { readLocale, translateNow, useLocale, useTranslation } from "~/i18n/useTranslation";
 import { filesUiMessages, translateFilesMessage } from "./filesUi.messages";
 
 import { formatAttachmentSize } from "@t3tools/client-runtime/state/attachments";
@@ -156,7 +156,9 @@ function ExtendedOfficeViewer(props: {
       .then((bytes) => {
         if (!controller.signal.aborted) {
           setFileSize(bytes.byteLength);
-          worker.postMessage({ type: "open", kind: props.kind, bytes }, [bytes]);
+          worker.postMessage({ type: "open", kind: props.kind, bytes, locale: readLocale() }, [
+            bytes,
+          ]);
         }
       })
       .catch((cause: unknown) =>

@@ -66,6 +66,7 @@ vi.mock(import("./office/WordDocument"), async () => {
 });
 
 import { getClientSettings } from "~/hooks/useSettings";
+import { setLocale } from "~/i18n/useTranslation";
 import { AttachmentFilePreview } from "./AttachmentFilePreview";
 import LargeTextViewer from "./LargeTextViewer";
 import VirtualTablePreview from "./VirtualTablePreview";
@@ -1739,9 +1740,15 @@ it.each(["odt", "odp"] as const)("preserves rendered %s spaces and tabs", async 
   }
 });
 
-it.each(["rtf", "epub", "ods"] as const)(
-  "preserves %s document text through the worker and attachment viewer",
-  async (kind) => {
+it.each([
+  ["rtf", "en"],
+  ["epub", "en"],
+  ["ods", "en"],
+  ["ods", "zh-CN"],
+] as const)(
+  "preserves %s document text and %s labels through the worker and attachment viewer",
+  async (kind, locale) => {
+    setLocale(locale);
     const archive = new JSZip();
     if (kind === "epub") {
       archive.file(
@@ -1759,7 +1766,7 @@ it.each(["rtf", "epub", "ods"] as const)(
     } else if (kind === "ods") {
       archive.file(
         "content.xml",
-        '<office:document><table:table table:name="Forecast"><table:table-row><table:table-cell><text:p>North<office:annotation><text:p>nested note</text:p></office:annotation></text:p><office:annotation><text:p>private note</text:p></office:annotation></table:table-cell><table:table-cell office:value="150"><office:annotation><text:p>revised from 120</text:p></office:annotation></table:table-cell><table:table-cell table:number-columns-repeated="1024"/></table:table-row><table:table-row table:number-rows-repeated="1048570"><table:table-cell table:number-columns-repeated="1024"/></table:table-row></table:table></office:document>',
+        `<office:document><table:table${locale === "en" ? ' table:name="Forecast"' : ""}><table:table-row><table:table-cell><text:p>North<office:annotation><text:p>nested note</text:p></office:annotation></text:p><office:annotation><text:p>private note</text:p></office:annotation></table:table-cell><table:table-cell office:value="150"><office:annotation><text:p>revised from 120</text:p></office:annotation></table:table-cell><table:table-cell table:number-columns-repeated="1024"/></table:table-row><table:table-row table:number-rows-repeated="1048570"><table:table-cell table:number-columns-repeated="1024"/></table:table-row></table:table></office:document>`,
       );
     }
     const file =
@@ -1779,12 +1786,13 @@ it.each(["rtf", "epub", "ods"] as const)(
           (event: MessageEvent<OfficeWorkerResult>) => resolve(event.data),
           { once: true },
         );
-        worker.postMessage({ type: "open", kind, bytes }, [bytes]);
+        worker.postMessage({ type: "open", kind, bytes, locale }, [bytes]);
       });
       if (kind === "ods") {
         expect(result.type).toBe("ods");
         if (result.type !== "ods") throw new Error("Expected spreadsheet");
         expect(result.sheets[0]!.rows).toEqual([["North", "150"]]);
+        expect(result.sheets[0]!.name).toBe(locale === "zh-CN" ? "工作表 1" : "Forecast");
       } else {
         expect(result.type).toBe("document");
         if (result.type !== "document") throw new Error("Expected document");
@@ -1819,8 +1827,12 @@ it.each(["rtf", "epub", "ods"] as const)(
           expect(screen.container.textContent).toContain("North");
           expect(screen.container.textContent).toContain("150");
           expect(screen.container.textContent).not.toContain("private note");
-          expect(screen.container.textContent).toContain("1 row · 2 columns");
-          expect(screen.container.textContent).not.toContain("Limited to 500");
+          expect(screen.container.textContent).toContain(
+            locale === "zh-CN" ? "1 行 · 2 列" : "1 row · 2 columns",
+          );
+          expect(screen.container.textContent).not.toContain(
+            locale === "zh-CN" ? "最多显示 500" : "Limited to 500",
+          );
         } else {
           const frame = screen.container.querySelector("iframe");
           expect(frame?.srcdoc).toContain(kind === "rtf" ? "10–20" : "first<br>second<br>third");
@@ -1829,6 +1841,15 @@ it.each(["rtf", "epub", "ods"] as const)(
       },
       { timeout: 10_000 },
     );
+    if (kind === "ods") {
+      await expect
+        .element(
+          screen.getByRole("table", {
+            name: `report.ods: ${locale === "zh-CN" ? "工作表 1" : "Forecast"}`,
+          }),
+        )
+        .toBeVisible();
+    }
     expect(screen.container.querySelector('[role="alert"]')).toBeNull();
   },
 );

@@ -1,6 +1,8 @@
 import { translate, type Locale } from "~/i18n/locale";
 
 export const filesUiMessages = {
+  "File contents": "文件内容",
+
   "This sheet is empty.": "此工作表为空。",
   "Preview limited to 250,000 rows, 1,024 columns, and bounded cell text.":
     "预览最多显示 250,000 行、1,024 列，并限制单元格文本长度。",

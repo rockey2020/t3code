@@ -1,6 +1,57 @@
 import { translate, type Locale } from "../../i18n/locale";
 
 export const settingsVoiceMessages = {
+  Hold: "长按",
+  Toggle: "开关",
+  Stop: "停止",
+  Record: "录音",
+  "Discard recording": "丢弃录音",
+  "No microphone found.": "未找到麦克风。",
+  "Record ten seconds and play it back. The audio stays on this device.":
+    "录制十秒音频并回放。音频只保存在此设备上。",
+  "This model": "此模型",
+  "Add words, separated by commas": "添加词语，以逗号分隔",
+  Models: "模型",
+  "Voice input uses the first connected microphone in this list.":
+    "语音输入会使用此列表中第一个已连接的麦克风。",
+  "Drop “um” and “uh” from transcripts.": "从转写中去掉“嗯”“呃”等语气词。",
+  "Your dictionary": "你的词典",
+  "Names and terms to spell your way, saved on this device.":
+    "按你的习惯拼写姓名和术语，仅保存在此设备上。",
+  "Off by default. Sends the transcript and nearby draft text, never audio, to the cleanup model.":
+    "默认关闭。只将转写和相邻草稿文本发送给润色模型，不发送音频。",
+  Instructions: "指令",
+  "The phrase you say to fix a mistake, like “scratch that”.":
+    "用于纠正错误的口头短语，例如“刚才的不算”。",
+  "Say a sentence. Cleanup is skipped, so you see exactly what the model heard.":
+    "说一句话。测试会跳过润色，让你看到模型实际识别的内容。",
+  "Used by everyone who dictates in {project}.": "供在 {project} 中使用语音输入的所有人使用。",
+  "Grades are error rates and speed is seconds per 30 s of audio, from Handy’s benchmark {hardware}.":
+    "评级依据错误率，速度表示处理每 30 秒音频所需的秒数，数据来自 Handy 的 {hardware} 基准测试。",
+  "Filter by language: {languages}": "按语言筛选：{languages}",
+  "Most accurate in {language}": "{language}准确率最高",
+  "{environment} can’t transcribe audio locally. Choose another destination.":
+    "{environment} 无法在本地转写音频。请选择其他目的地。",
+  "Tap to toggle, hold to talk": "点按切换，按住说话",
+  "Record while held": "按住时录音",
+  "Tap to start, tap to stop": "点按开始，再次点按停止",
+  Smallest: "体积最小",
+  "Most accurate": "准确率最高",
+  Fastest: "速度最快",
+  "Used by everyone who dictates on this environment.": "供在此环境中使用语音输入的所有人使用。",
+  "Where your speech is turned into text.": "将你的语音转为文字的位置。",
+  "The provider detects your language automatically.": "提供方会自动检测你的语言。",
+  "OpenAI handles silence itself.": "OpenAI 会自行处理静音。",
+  "Skip silence and background noise before transcribing.": "转写前过滤静音和背景噪声。",
+  "Your own instructions for cleanup.": "自定义转写润色指令。",
+  "Fix punctuation, numbers, lists, and spoken corrections.": "修正标点、数字、列表以及口头纠正。",
+  "Microphones, preferred first": "麦克风，优先使用的排在前面",
+  "Saved microphone": "已保存的麦克风",
+  "In use": "正在使用",
+  "Not connected": "未连接",
+  "Move {name} up": "将 {name} 上移",
+  "Move {name} down": "将 {name} 下移",
+  "Forget {name}": "忘记 {name}",
   "Auto: press to toggle, hold to record": "自动：点按切换，按住录音",
   "Hold: record while held": "按住：按住时录音",
   "Toggle: press to start, press again to stop": "切换：点按开始，再次点按停止",

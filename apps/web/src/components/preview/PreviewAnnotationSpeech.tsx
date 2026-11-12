@@ -1,3 +1,4 @@
+import { composerUiMessages } from "~/components/chat/composerUi.messages";
 import { scopeProjectRef } from "@t3tools/client-runtime/environment";
 import type {
   DesktopPreviewAnnotationVoiceConfig,
@@ -10,7 +11,7 @@ import { useEffect, useRef, useState } from "react";
 import { resolveSpeechPresentation } from "~/components/chat/ComposerSpeechButton";
 import { VoiceInputSetup } from "~/components/chat/VoiceInputSetup";
 import { toastManager } from "~/components/ui/toast";
-import { translateNow } from "~/i18n/useTranslation";
+import { translateNow, useTranslation } from "~/i18n/useTranslation";
 import { previewUiMessages } from "./previewUi.messages";
 import { useComposerDraftStore } from "~/composerDraftStore";
 import { useStableCallback } from "~/hooks/useStableCallback";
@@ -34,6 +35,7 @@ export function PreviewAnnotationSpeech({
   config: DesktopPreviewAnnotationVoiceConfig;
   keybindings: Parameters<typeof useDictationShortcut>[0]["keybindings"];
 }) {
+  const t = useTranslation(composerUiMessages);
   const navigate = useNavigate();
   const thread = useThreadShell(threadRef);
   const draftThread = useComposerDraftStore((store) => store.getDraftThreadByRef(threadRef));
@@ -97,7 +99,7 @@ export function PreviewAnnotationSpeech({
     available,
     phase: state.phase,
     errorAction: state.errorAction,
-    status: resolveSpeechPresentation(state, null).status,
+    status: resolveSpeechPresentation(state, null, t).status,
     preview: preview ? preview.committed + preview.tentative : null,
     level,
     shortcutLabel,

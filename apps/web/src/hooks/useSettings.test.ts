@@ -14,7 +14,6 @@ vi.mock("~/localApi", () => ({
 import {
   __resetClientSettingsPersistenceForTests,
   __setClientSettingsForTests,
-  describeSettingsSaveFailure,
   ensureClientSettingsHydrated,
   getClientSettings,
   mergeEnvironmentSettings,
@@ -40,6 +39,31 @@ describe("client settings hydration", () => {
     timestampFormat: "12-hour" as const,
     favorites: [{ provider: ProviderInstanceId.make("codex_work"), model: "gpt-5.6" }],
   };
+  it.each([ ["en", "en"], ["zh-CN", "zh"] ])(
+    "migrates legacy %s to the native language setting once",
+    async (legacy, language) => {
+      const storage = new Map([["t3code-cn:locale", legacy]]);
+      const previous = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
+      Object.defineProperty(globalThis, "localStorage", {
+        configurable: true,
+        value: {
+          getItem: (key: string) => storage.get(key) ?? null,
+          removeItem: (key: string) => storage.delete(key),
+        },
+      });
+      try {
+        persistenceMocks.getClientSettings.mockResolvedValue(savedSettings);
+        await ensureClientSettingsHydrated();
+        expect(getClientSettings().language).toBe(language);
+        expect(persistenceMocks.setClientSettings).toHaveBeenCalledWith({ ...savedSettings, language });
+        expect(storage.has("t3code-cn:locale")).toBe(false);
+      } finally {
+        if (previous) Object.defineProperty(globalThis, "localStorage", previous);
+        else Reflect.deleteProperty(globalThis, "localStorage");
+      }
+    },
+  );
+
   const onboardingCompletedAt = "2026-09-05T12:00:00.000Z";
   const complete = (current: ClientSettings) => ({ ...current, onboardingCompletedAt });
 
@@ -336,16 +360,4 @@ it("uses the environment's model preferences after migration, including empty li
   );
   expect(merged.favorites).toEqual([]);
   expect(merged.providerModelPreferences).toEqual({});
-});
-
-it("keeps the environment name and the server's own error in a save failure", () => {
-  expect(
-    describeSettingsSaveFailure("Work laptop", new Error("settings are locked"), "zh-CN"),
-  ).toBe("无法在 Work laptop 上保存：settings are locked");
-  expect(describeSettingsSaveFailure("Work laptop", null, "zh-CN")).toBe(
-    "无法在 Work laptop 上保存：保存失败，请重新连接后再保存。",
-  );
-  expect(describeSettingsSaveFailure("Work laptop", null, "en")).toBe(
-    "Could not save on Work laptop: The save failed. Try reconnecting and saving again.",
-  );
 });

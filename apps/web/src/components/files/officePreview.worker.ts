@@ -30,7 +30,9 @@ async function handle(input: OfficeWorkerRequest) {
   }
   const { archive } = await boundedArchive(input);
   const result =
-    input.kind === "epub" ? await openEpub(archive) : await openDocument(archive, input.kind);
+    input.kind === "epub"
+      ? await openEpub(archive, input.locale)
+      : await openDocument(archive, input.kind, input.locale);
   if (result.type === "ods") {
     workbook = result.sheets.map((sheet) => sheet.rows);
     reply({

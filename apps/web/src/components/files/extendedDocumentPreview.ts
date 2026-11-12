@@ -7,7 +7,7 @@ import { XMLParser, XMLValidator } from "fast-xml-parser";
 import { decodeHTMLAttribute, decodeHTMLStrict as decodeEntities } from "entities";
 import type JSZip from "jszip";
 
-import { translateNow } from "~/i18n/useTranslation";
+import { translate, type Locale } from "~/i18n/locale";
 
 import { filesUiMessages } from "./filesUi.messages";
 import { type OfficeWorkerResult, type NotebookCell } from "./officePreviewProtocol";
@@ -302,6 +302,7 @@ function repeat(value: string | undefined, max: number) {
 export async function openDocument(
   archive: JSZip,
   kind: "odt" | "ods" | "odp",
+  locale: Locale = "en",
 ): Promise<OfficeWorkerResult> {
   markupBytes = 0;
   const source = await archive.file("content.xml")?.async("string");
@@ -364,7 +365,7 @@ export async function openDocument(
         return {
           name:
             table.attrs["table:name"] ||
-            translateNow(filesUiMessages, "Sheet {number}", { number: index + 1 }),
+            translate(locale, filesUiMessages, "Sheet {number}", { number: index + 1 }),
           rows,
           rowCount: rows.length,
           columns: rows.reduce((columns, row) => Math.max(columns, row.length), 1),
@@ -385,7 +386,7 @@ export async function openDocument(
   }
   return { type: "document", navigation: kind === "odp" ? "slide" : "page", pages: rendered };
 }
-export async function openEpub(archive: JSZip): Promise<OfficeWorkerResult> {
+export async function openEpub(archive: JSZip, locale: Locale = "en"): Promise<OfficeWorkerResult> {
   markupBytes = 0;
   const container = parseXml((await archive.file("META-INF/container.xml")?.async("string")) ?? "");
   const rootfile = find(container, "rootfile")[0]?.attrs["full-path"];
@@ -406,7 +407,7 @@ export async function openEpub(archive: JSZip): Promise<OfficeWorkerResult> {
     pages.push({
       title:
         text(find(chapter, "title")[0] ?? find(chapter, "h1")[0] ?? chapter).slice(0, 120) ||
-        translateNow(filesUiMessages, "Chapter {number}", { number: pages.length + 1 }),
+        translate(locale, filesUiMessages, "Chapter {number}", { number: pages.length + 1 }),
       html: await epubHtml(chapter, archive, path),
     });
   }

@@ -1,3 +1,5 @@
+import type { Locale } from "~/i18n/locale";
+
 import type { OfficePreviewKind } from "@t3tools/shared/filePreview";
 
 export const OFFICE_PREVIEW_MAX_BYTES = 50 * 1024 * 1024;
@@ -13,7 +15,12 @@ export type WorkbookView = {
 };
 
 export type OfficeWorkerRequest =
-  | { readonly type: "open"; readonly kind: OfficePreviewKind; readonly bytes: ArrayBuffer }
+  | {
+      readonly type: "open";
+      readonly kind: OfficePreviewKind;
+      readonly bytes: ArrayBuffer;
+      readonly locale?: Locale;
+    }
   | { readonly type: "sheet-page"; readonly sheet: number; readonly index: number };
 
 export type NotebookCell = {

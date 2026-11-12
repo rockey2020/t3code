@@ -830,10 +830,7 @@ function PullRequestCodeTab({
       extendRange ? lastViewedFileKey : null,
     );
     setLastViewedFileKey(fileKey);
-    for (const file of range) {
-      // A commit's diff names that commit's version of the file, not the head's.
-      setViewed(file.path, viewed, commit === null ? file.fileDiff.newObjectId : undefined);
-    }
+    for (const file of range) setViewed(file.path, viewed);
     setFoldChoices((current) =>
       range.reduce((next, file) => withFileDiffFold(next, file.fileKey, viewed), current),
     );

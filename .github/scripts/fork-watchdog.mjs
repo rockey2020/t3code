@@ -17,10 +17,81 @@ export async function recoverMaintenance({ api, config, now }) {
   const pending = async () => {
     const runs = [];
     for (const status of ["queued", "in_progress", "waiting", "pending", "requested"]) {
-      const page = await api(`${root}/actions/runs?status=${status}&per_page=100`);
-      if (page.total_count > page.workflow_runs.length)
-        throw new Error("Incomplete Actions inventory; refusing recovery.");
-      runs.push(...page.workflow_runs.filter(belongs));
+      let previous;
+      let verified;
+      let diagnostic;
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        const collected = [];
+        const seen = new Set();
+        let expected;
+        let complete = false;
+        for (let page = 1; page <= 10; page++) {
+          const result = await api(
+            `${root}/actions/runs?status=${status}&per_page=100&page=${page}`,
+          );
+          const batch = result?.workflow_runs;
+          const total = result?.total_count;
+          diagnostic = `status=${status} attempt=${attempt} page=${page} total=${total} received=${Array.isArray(batch) ? batch.length : "invalid"} unique=${seen.size}`;
+          if (!Number.isSafeInteger(total) || total < 0 || !Array.isArray(batch)) {
+            diagnostic += " invalid response";
+            break;
+          }
+          expected ??= total;
+          if (total !== expected) {
+            diagnostic += ` count changed from ${expected}`;
+            break;
+          }
+          let collision = false;
+          for (const run of batch) {
+            if (!Number.isSafeInteger(run?.id) || seen.has(run.id)) {
+              collision = true;
+              break;
+            }
+            seen.add(run.id);
+            collected.push(run);
+          }
+          diagnostic += ` collected=${seen.size}`;
+          if (collision || seen.size > total) {
+            diagnostic += " duplicate/invalid ID or excess runs";
+            break;
+          }
+          if (seen.size === total) {
+            complete = true;
+            break;
+          }
+          if (!batch.length) {
+            diagnostic += " empty page before total";
+            break;
+          }
+          if (page === 10) diagnostic += " page limit exceeded";
+        }
+        if (!complete) {
+          previous = undefined;
+          continue;
+        }
+        // Counts alone cannot detect records moving between pages during a scan.
+        const fingerprint = JSON.stringify(
+          collected
+            .map((run) => [
+              run.id,
+              run.status,
+              run.path,
+              run.head_branch,
+              run.created_at,
+              run.run_started_at,
+            ])
+            .sort((left, right) => left[0] - right[0]),
+        );
+        if (previous === fingerprint) {
+          verified = collected;
+          break;
+        }
+        diagnostic += " inventory changed between scans or not yet rechecked";
+        previous = fingerprint;
+      }
+      if (!verified)
+        throw new Error(`Incomplete Actions inventory; refusing recovery: ${diagnostic}`);
+      runs.push(...verified.filter(belongs));
     }
     return runs;
   };

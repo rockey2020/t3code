@@ -152,9 +152,7 @@ export const layer: Layer.Layer<
         checkpoint === undefined ||
         scope === undefined ||
         checkpoint.scopeId !== scope.id ||
-        // Missing snapshots support conversation rewind only.
-        (checkpoint.status !== "ready" &&
-          !(input.restoreFiles === false && checkpoint.status === "missing"))
+        checkpoint.status !== "ready"
       ) {
         return yield* new CheckpointRollbackExecutionError({
           reason: "rollback-target-invalid",

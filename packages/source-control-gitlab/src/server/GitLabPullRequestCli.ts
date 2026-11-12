@@ -29,7 +29,7 @@ import type {
   PullRequestReactionContent,
   PullRequestReviewCommentDraft,
   PullRequestReviewPosition,
-  PullRequestConversationThread,
+  PullRequestReviewThread,
   PullRequestReviewVerdict,
   PullRequestReviewerCandidateList,
 } from "@t3tools/contracts";
@@ -345,7 +345,7 @@ const isVcsProcessExitError = Schema.is(VcsProcessExitError);
 const DIFF_FILE_MAX_OUTPUT_BYTES = 1024 * 1024;
 
 export interface GitLabDiscussionThreads {
-  readonly threads: ReadonlyArray<PullRequestConversationThread>;
+  readonly threads: ReadonlyArray<PullRequestReviewThread>;
   readonly diffRefsByThreadId: ReadonlyMap<string, GitLabDiffRefs>;
   readonly overviewFindingIds: ReadonlyArray<string>;
   readonly truncated: boolean;
@@ -1310,7 +1310,7 @@ export const make = Effect.gen(function* () {
     readonly repository: string;
     readonly number: number;
     readonly page: number;
-    readonly collected: ReadonlyArray<PullRequestConversationThread>;
+    readonly collected: ReadonlyArray<PullRequestReviewThread>;
     readonly collectedDiffRefs: ReadonlyMap<string, GitLabDiffRefs>;
     readonly collectedFindingIds: ReadonlyArray<string>;
   }): Effect.Effect<GitLabDiscussionThreads, GitLabPullRequestCliError> =>

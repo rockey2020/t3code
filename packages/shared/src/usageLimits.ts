@@ -28,8 +28,7 @@ export function exhaustedUsageWindow(
   now: number,
   model?: string,
 ) {
-  const windows = provider?.usageLimits?.windows ?? [];
-  const exhausted = windows.filter(
+  const exhausted = (provider?.usageLimits?.windows ?? []).filter(
     (window) =>
       (window.usedPercent ?? 0) >= 100 &&
       (!window.resetsAt ||
@@ -54,13 +53,6 @@ export function exhaustedUsageWindow(
           (pool === "3p" && (family === "claude" || family === "gpt"))
         );
       });
-    }
-    case "codex": {
-      // Seat-based plans spend credits only past their plan windows, so the credit cap blocks only plans without them.
-      const hasPlanWindows = windows.some(
-        (window) => window.id === "primary" || window.id === "secondary",
-      );
-      return exhausted.find((window) => window.id !== "individual" || !hasPlanWindows);
     }
     case "opencode":
       return exhausted.find(
@@ -127,26 +119,22 @@ export const CURSOR_USAGE_WINDOWS = [
   {
     id: "totalPercentUsed",
     label: "Overall",
-    description: "All usage on your plan this billing cycle.",
+    description: "Combined usage across both allowances, not a third quota.",
   },
   {
     id: "autoPercentUsed",
     label: "Cursor Models",
-    description: "Grok, Composer, and Auto use this allowance.",
+    description: "Grok and Composer use this first. Auto can use either pool.",
   },
   {
     id: "apiPercentUsed",
     label: "Other Models",
-    description: "Usage allowance for third-party models such as Claude, GPT, and Gemini.",
+    description: "Claude, GPT, and Gemini use this pool. Grok and Composer fall back here.",
   },
 ] as const;
 
-export function cursorUsageWindowDetails(id: string, pool: LimitPool) {
-  const details = CURSOR_USAGE_WINDOWS.find((window) => window.id === id);
-  return details &&
-    ((pool.windows.length === 1 && id === "totalPercentUsed") || hasDuplicateCursorTotal(pool))
-    ? { ...details, label: null, description: undefined }
-    : details;
+export function cursorUsageWindowDetails(id: string) {
+  return CURSOR_USAGE_WINDOWS.find((window) => window.id === id);
 }
 
 function cursorUsageWindowRank(id: string): number {
@@ -448,7 +436,7 @@ export function limitNotices(presentations: LimitPresentations): readonly LimitN
         notices.push({ subject, message: null, reason: "noAccounts" });
     }
   }
-  return [...new Map(notices.map((notice) => [JSON.stringify(notice), notice])).values()];
+  return notices;
 }
 
 export function collectLimitNotices(presentations: LimitPresentations): readonly string[] {
@@ -488,26 +476,6 @@ export interface LimitPool {
   readonly windows: readonly LimitPoolWindow[];
 }
 
-function hasDuplicateCursorTotal(pool: LimitPool): boolean {
-  if (pool.windows.length !== 2) return false;
-  const total = pool.windows.find((window) => window.id === "totalPercentUsed");
-  const auto = pool.windows.find((window) => window.id === "autoPercentUsed");
-  return (
-    total !== undefined &&
-    auto !== undefined &&
-    total.members.length === auto.members.length &&
-    total.members.every(({ account, window }) =>
-      account.limits.windows.some(
-        (candidate) =>
-          candidate.id === auto.id &&
-          candidate.kind === auto.kind &&
-          candidate.usedPercent === window.usedPercent &&
-          candidate.resetsAt === window.resetsAt,
-      ),
-    )
-  );
-}
-
 export function displayLimitWindows(pool: LimitPool) {
   if (pool.driver === "antigravity") {
     return [...pool.windows].sort(
@@ -522,9 +490,9 @@ export function displayLimitWindows(pool: LimitPool) {
   if (pool.driver !== "cursor") return pool.windows;
   const hasAuto = pool.windows.some((window) => window.id === "autoPercentUsed");
   const hasApi = pool.windows.some((window) => window.id === "apiPercentUsed");
-  const hideTotal = (hasAuto && hasApi) || hasDuplicateCursorTotal(pool);
+  const hasBothPools = hasAuto && hasApi;
   return pool.windows
-    .filter((window) => !hideTotal || window.id !== "totalPercentUsed")
+    .filter((window) => !hasBothPools || window.id !== "totalPercentUsed")
     .sort((left, right) => cursorUsageWindowRank(left.id) - cursorUsageWindowRank(right.id));
 }
 

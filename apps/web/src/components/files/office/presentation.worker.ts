@@ -10,8 +10,14 @@ import {
   type SlidePrimitive,
 } from "@betteroffice/pptx";
 import { slideFonts } from "./slide-fonts";
-import type { SlideMethods, SlidePainted, SlideSummary } from "./slide-protocol";
-import { maxImageSide, type VectorBitmap, type VectorRequest } from "./vector-pictures";
+import {
+  maxImageSide,
+  type SlideMethods,
+  type SlidePainted,
+  type SlideSummary,
+  type VectorBitmap,
+  type VectorRequest,
+} from "./slide-protocol";
 import { deckText } from "./slide-text";
 import { officeImageBitmap } from "./image-bitmap";
 import { serveWorker, Transfer } from "./worker-rpc";

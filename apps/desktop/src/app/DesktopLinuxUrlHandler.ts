@@ -298,11 +298,10 @@ export const make = Effect.gen(function* () {
       if (Option.isNone(png)) return;
       // The AppImage mount is temporary; the chooser needs the icon after exit.
       yield* fileSystem.makeDirectory(iconsDir, { recursive: true });
-      // Electron's copyFile from app.asar extracts to a temp file it never deletes.
-      yield* fileSystem.writeFile(iconPath, yield* fileSystem.readFile(png.value));
+      yield* fileSystem.copyFile(png.value, iconPath);
     }).pipe(
       Effect.catch((error) =>
-        logWarning("URL handler icon install failed", { iconPath, category: error.reason._tag }),
+        logWarning("URL handler icon copy failed", { iconPath, category: error.reason._tag }),
       ),
     );
 

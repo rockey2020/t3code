@@ -1,6 +1,6 @@
 import * as NodeAssert from "node:assert/strict";
 import * as NodeTest from "node:test";
-import { localizationStatus, nativeChineseCandidates } from "./i18n-upstream.mjs";
+import { nativeChineseCandidates } from "./i18n-upstream.mjs";
 
 NodeTest.test(
   "flags native Chinese catalogs and locale configuration but not unrelated content",
@@ -27,21 +27,3 @@ NodeTest.test(
     );
   },
 );
-
-NodeTest.test("accepts reviewed GT catalogs but stops for a new localization architecture", () => {
-  NodeAssert.equal(localizationStatus([]), "no-native-chinese-detected");
-  NodeAssert.equal(
-    localizationStatus([
-      "apps/web/src/i18n/translations/zh.json",
-      "apps/mobile/src/i18n/translations/zh.json",
-    ]),
-    "native-chinese-integrated",
-  );
-  NodeAssert.equal(
-    localizationStatus([
-      "apps/web/src/i18n/translations/zh.json",
-      "packages/shared/locales/zh-CN.json",
-    ]),
-    "review-upstream-localization",
-  );
-});

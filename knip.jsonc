@@ -12,7 +12,6 @@
         // CodeRabbit loads its configuration by filename.
         ".coderabbit.config.ts",
         ".github/scripts/thread-transfer-report.cjs",
-        ".github/scripts/pr-limits.cjs",
       ],
       // Keep archived upstream release tools reachable for future syncs.
       "github-actions": {

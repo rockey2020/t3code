@@ -21,13 +21,7 @@ describe("Cursor replay fixtures", () => {
       runReplayFixture({
         fixtureName: "message_steering",
         buildInput: messageRestartInput,
-        driver: {
-          ...cursorSteeringProvider,
-          transcriptFile: new URL(
-            "./fixtures/message_steering/cursor_restart_transcript.ndjson",
-            import.meta.url,
-          ),
-        },
+        driver: cursorSteeringProvider,
         harness: CursorOrchestratorReplayHarness,
       }),
     );

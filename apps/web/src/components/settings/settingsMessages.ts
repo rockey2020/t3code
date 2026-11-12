@@ -1,9 +1,6 @@
 import type { Locale } from "../../i18n/locale";
 
 export const settingsMessages = {
-  "Screen reader window title": "屏幕阅读器窗口标题",
-  Preferences: "偏好设置",
-  More: "更多",
   Settings: "设置",
   "Interface language": "界面语言",
   Language: "语言",

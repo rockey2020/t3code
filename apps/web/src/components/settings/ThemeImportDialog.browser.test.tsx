@@ -13,6 +13,7 @@ import {
   THEME_FILE_VERSION,
 } from "../../themePalette";
 import type { OpenVsxThemeExtension } from "../../openVsxThemes";
+import { LOCALE_STORAGE_KEY } from "../../i18n/locale";
 import { setLocale } from "../../i18n/useTranslation";
 import { ThemeImportDialog } from "./ThemeImportDialog";
 
@@ -55,8 +56,7 @@ describe("ThemeImportDialog", () => {
       </StrictMode>,
     );
 
-    // One input event: keystrokes more than the search debounce apart would search a prefix first.
-    await userEvent.fill(page.getByLabelText("Search Open VSX themes"), "night");
+    await userEvent.type(page.getByLabelText("Search Open VSX themes"), "night");
 
     await expect.element(page.getByRole("heading", { name: "Nightfall" })).toBeVisible();
     expect(searchOpenVsxThemes).toHaveBeenCalledWith(
@@ -198,6 +198,7 @@ describe("ThemeImportDialog JSONC imports", () => {
 describe("ThemeImportDialog in Chinese", () => {
   it("translates each failed file after its name instead of the joined line", async () => {
     using _themes = isolateThemes();
+    const previousLocale = localStorage.getItem(LOCALE_STORAGE_KEY);
     try {
       setLocale("zh-CN");
       await using _screen = await render(
@@ -221,6 +222,8 @@ describe("ThemeImportDialog in Chinese", () => {
         .toBeVisible();
     } finally {
       setLocale("en");
+      if (previousLocale === null) localStorage.removeItem(LOCALE_STORAGE_KEY);
+      else localStorage.setItem(LOCALE_STORAGE_KEY, previousLocale);
     }
   });
 });

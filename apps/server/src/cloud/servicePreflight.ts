@@ -1,19 +1,12 @@
 import packageJson from "../../package.json" with { type: "json" };
 import { BUILD_MIGRATION_HEAD, recordedMigrations } from "../persistence/databaseMigrationHead.ts";
-import { skippedV2Migrations } from "../persistence/Migrations.ts";
-import { reconciledV2PreviewHistory } from "../persistence/reconcileV2PreviewMigration.ts";
-import {
-  isSupportedLauncherProtocol,
-  SERVICE_LAUNCHER_PROTOCOL,
-  type SupportedLauncherProtocol,
-} from "./serviceProtocol.ts";
+import { SERVICE_LAUNCHER_PROTOCOL } from "./serviceProtocol.ts";
 
 export type ServicePreflightResult =
   | {
       readonly status: "ready";
       readonly version: string;
-      /** The launcher protocol the server named; it accepts no other in reply. */
-      readonly launcherProtocol: SupportedLauncherProtocol;
+      readonly launcherProtocol: typeof SERVICE_LAUNCHER_PROTOCOL;
     }
   | {
       readonly status: "blocked";
@@ -27,15 +20,14 @@ export function runServicePreflight(input: {
   readonly version?: string;
 }): ServicePreflightResult {
   const version = input.version ?? packageJson.version;
-  const { launcherProtocol } = input;
-  if (!isSupportedLauncherProtocol(launcherProtocol)) {
+  if (input.launcherProtocol !== SERVICE_LAUNCHER_PROTOCOL) {
     return {
       status: "blocked",
       version,
       // A stale `t3` earlier on PATH (an old npm/nvm global) makes `t3 service install`
       // reinstall itself and report success, so name the exact install and the path check.
       reason: [
-        `The installed service launcher speaks protocol ${launcherProtocol}, but t3@${version} requires protocol ${SERVICE_LAUNCHER_PROTOCOL}.`,
+        `The installed service launcher speaks protocol ${input.launcherProtocol}, but t3@${version} requires protocol ${SERVICE_LAUNCHER_PROTOCOL}.`,
         `On the server machine, install this exact CLI: \`curl -fsSL https://t3.codes/install.sh | T3CODE_VERSION=${version} sh\`.`,
         `Check that \`t3 --version\` prints ${version} and that \`which -a t3\` lists no older t3 (such as an npm or nvm install) first, then run \`~/.local/bin/t3 service install\` (the installer's default path).`,
         "Updating the desktop app does not update this CLI, and `t3 service update` only repairs the service with whichever CLI runs it.",
@@ -43,17 +35,14 @@ export function runServicePreflight(input: {
     };
   }
 
-  const recorded = recordedMigrations(input.databasePath);
-  if (recorded === null) {
+  const newer = newerRecordedMigrations(input.databasePath);
+  if (newer === null) {
     return {
       status: "blocked",
       version,
       reason: `Could not read this database to confirm t3@${version} supports it.`,
     };
   }
-  const newer = recorded
-    .filter(({ id }) => id > BUILD_MIGRATION_HEAD)
-    .map(({ id, name }) => `${id}_${name}`);
   if (newer.length > 0) {
     return {
       status: "blocked",
@@ -62,35 +51,33 @@ export function runServicePreflight(input: {
     };
   }
 
-  // Startup reconciles V2 preview ids before it checks the history, so check what it will see.
-  const reconciled = reconciledV2PreviewHistory(recorded);
-  const incompatible =
-    reconciled === null ? ["an unexpected V2 preview history"] : skippedV2Migrations(reconciled);
-  if (incompatible.length > 0) {
-    return {
-      status: "blocked",
-      version,
-      reason: `This database has incompatible migration history: ${incompatible.join(", ")}. Start the build that wrote it, or report this migration history so an upgrade path can be added.`,
-    };
-  }
-
-  return { status: "ready", version, launcherProtocol };
+  return { status: "ready", version, launcherProtocol: SERVICE_LAUNCHER_PROTOCOL };
 }
 
-export function decodeServicePreflightResult(
-  value: unknown,
-  launcherProtocol: SupportedLauncherProtocol,
-): ServicePreflightResult | undefined {
+/** Migrations a newer build recorded, or null when the database exists but cannot be read.
+ * Startup already handles renamed ids this build knows. */
+function newerRecordedMigrations(databasePath: string): ReadonlyArray<string> | null {
+  const recorded = recordedMigrations(databasePath);
+  return recorded === null
+    ? null
+    : recorded.filter(({ id }) => id > BUILD_MIGRATION_HEAD).map(({ id, name }) => `${id}_${name}`);
+}
+
+export function decodeServicePreflightResult(value: unknown): ServicePreflightResult | undefined {
   if (typeof value !== "object" || value === null) {
     return undefined;
   }
   const record = value as Record<string, unknown>;
   if (
     record.status === "ready" &&
-    record.launcherProtocol === launcherProtocol &&
+    record.launcherProtocol === SERVICE_LAUNCHER_PROTOCOL &&
     typeof record.version === "string"
   ) {
-    return { status: "ready", version: record.version, launcherProtocol };
+    return {
+      status: "ready",
+      version: record.version,
+      launcherProtocol: SERVICE_LAUNCHER_PROTOCOL,
+    };
   }
   if (
     record.status === "blocked" &&

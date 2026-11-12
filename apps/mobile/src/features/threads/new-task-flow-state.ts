@@ -75,8 +75,6 @@ export type RouteDraftResolution =
   | { readonly kind: "none" }
   | { readonly kind: "pending" }
   | { readonly kind: "missing" }
-  /** The draft survives but its project is gone: pick another for it. */
-  | { readonly kind: "pickProject" }
   | { readonly kind: "open"; readonly flow: NewTaskFlowState };
 
 export function resolveRouteDraft(input: {
@@ -103,8 +101,7 @@ export function resolveRouteDraft(input: {
   const loaded = input.projects.some(
     (project) => project.environmentId === stamp.environmentId && project.id === stamp.projectId,
   );
-  if (!loaded)
-    return input.stampedEnvironmentLoading ? { kind: "pending" } : { kind: "pickProject" };
+  if (!loaded) return input.stampedEnvironmentLoading ? { kind: "pending" } : { kind: "missing" };
   return {
     kind: "open",
     flow: {

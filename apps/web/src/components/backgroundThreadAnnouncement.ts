@@ -1,10 +1,7 @@
 import type { OrchestrationV2RunStatus, RunId } from "@t3tools/contracts";
 
 import type { SidebarThreadSummary } from "../types";
-import {
-  runOutcomeText,
-  THREAD_STATUS_TEXT,
-} from "@t3tools/client-runtime/state/thread-activity-announcement";
+import { runOutcomeText, THREAD_STATUS_TEXT } from "./chat/threadActivityAnnouncement";
 
 export interface BackgroundThreadSnapshot {
   readonly key: string;

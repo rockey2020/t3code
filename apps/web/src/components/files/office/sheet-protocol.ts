@@ -1,7 +1,6 @@
 // Adapted from opencode (MIT). Copyright (c) 2025 opencode. See LICENSE.opencode.
 import type { SheetInfo } from "@betteroffice/xlsx";
 import type { CellAddr, CellRange, GridMeta, HyperlinkRegion } from "@betteroffice/xlsx/headless";
-import type { WorkbookView } from "../officePreviewProtocol";
 import type { Span } from "./sheet-cells";
 import type { Method } from "./worker-rpc";
 
@@ -71,7 +70,7 @@ export type SheetMethods = {
    * saved on a hidden sheet. Undefined when no sheet is visible.
    */
   readonly open: Method<
-    { readonly bytes: ArrayBuffer; readonly view: WorkbookView },
+    { readonly bytes: ArrayBuffer },
     { readonly tabs: readonly SheetTab[]; readonly layout: SheetLayout } | undefined
   >;
   /** Makes a sheet the active one; rejects, leaving the sheet before it active, when it cannot open. */

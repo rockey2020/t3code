@@ -161,9 +161,6 @@ function withAvatar(
   return avatarUrl === null ? actor : { ...actor, avatarUrl };
 }
 
-const workflowRunIdOf = (url: string | null) =>
-  url?.match(/\/actions\/runs\/(\d+)(?:\/|$)/)?.[1] ?? null;
-
 function withWorkflowApprovals(
   checks: ReadonlyArray<PullRequestCheck>,
   runs: ReadonlyArray<GitHubWorkflowRunApproval>,
@@ -172,8 +169,8 @@ function withWorkflowApprovals(
   const representedRunIds = new Set<number>();
   for (const check of checks) {
     if (check.status !== "action-required" || check.url === null) continue;
-    const id = workflowRunIdOf(check.url);
-    if (id !== null) representedRunIds.add(Number(id));
+    const id = check.url.match(/\/actions\/runs\/(\d+)(?:\/|$)/)?.[1];
+    if (id !== undefined) representedRunIds.add(Number(id));
   }
   const approvalChecks = runs
     .filter((run) => !representedRunIds.has(run.id))
@@ -197,30 +194,6 @@ function withWorkflowApprovals(
           },
         ]
       : []),
-  ];
-}
-
-// GitHub adds a run's check runs only as its jobs start, so a queued run can have none yet.
-function withUnfinishedWorkflowRuns(
-  checks: ReadonlyArray<PullRequestCheck>,
-  runs: ReadonlyArray<GitHubWorkflowRunApproval>,
-): ReadonlyArray<PullRequestCheck> {
-  const runningRunIds = new Set<number>();
-  for (const check of checks) {
-    if (check.status !== "pending" && check.status !== "action-required") continue;
-    const id = workflowRunIdOf(check.url);
-    if (id !== null) runningRunIds.add(Number(id));
-  }
-  return [
-    ...checks,
-    ...runs
-      .filter((run) => !runningRunIds.has(run.id))
-      .map((run): PullRequestCheck => ({
-        name: run.name,
-        status: "pending",
-        description: "This workflow run has not finished.",
-        url: run.url,
-      })),
   ];
 }
 
@@ -365,24 +338,11 @@ export const make = Effect.gen(function* () {
                   }),
                 )
         ).pipe(
-          Effect.zip(
-            pullRequest.state !== "open" || pullRequest.headSha == null
-              ? Effect.succeed([] as ReadonlyArray<GitHubWorkflowRunApproval>)
-              : cli.listUnfinishedWorkflowRuns({ ...input, headSha: pullRequest.headSha }).pipe(
-                  Effect.catchIf(
-                    (error) =>
-                      error._tag !== "GitHubApiRateLimitError" &&
-                      error._tag !== "SourceControlRateLimitPausedError",
-                    () => Effect.succeed([] as ReadonlyArray<GitHubWorkflowRunApproval>),
-                  ),
-                ),
-            { concurrent: true },
-          ),
-          Effect.map(([workflowApprovals, unfinishedRuns]) => ({
+          Effect.map((workflowApprovals) => ({
             ...pullRequest,
             author: withAvatar(pullRequest.author, new Map(), input.host),
             checks: withWorkflowApprovals(
-              withUnfinishedWorkflowRuns(pullRequest.checks, unfinishedRuns),
+              pullRequest.checks,
               workflowApprovals.runs,
               workflowApprovals.unavailable,
             ),

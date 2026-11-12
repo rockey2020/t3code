@@ -83,7 +83,6 @@ github:tris203
 github:tsouth89
 github:UtkarshUsername
 github:vitalyiegorov
--github:wSedlacek Opened over 130 unapproved PRs in 12 days, far past the open PR limit
 github:Yash-Singh1
 github:yashranaway
 github:Ymit24

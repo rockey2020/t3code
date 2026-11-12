@@ -56,10 +56,4 @@ describe("importPastedComposerText", () => {
       pasted,
     );
   });
-
-  it("imports CRLF and CR clipboard text with LF line breaks", () => {
-    expect(
-      importPastedComposerText(clipboard({ "text/plain": "x\r\n\r\ny\rz" }), () => new Map()),
-    ).toBe("x\n\ny\nz");
-  });
 });

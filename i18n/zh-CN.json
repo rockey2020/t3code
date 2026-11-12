@@ -3718,6 +3718,7 @@
     "Starting source control action...": "正在启动版本控制操作…"
   },
   "apps/web/src/components/globalUi.messages.ts": {
+    "Working": "运行中",
     "Search is limited to {count} characters.": "搜索内容不能超过 {count} 个字符。",
     "Confirm action": "确认操作",
     "This action requires your confirmation.": "此操作需要你的确认。",
@@ -6785,6 +6786,9 @@
     "Preview: Find on Page": "预览：在页面上查找"
   },
   "apps/web/src/components/settings/settingsDetailUi.messages.ts": {
+    "Screen reader window title": "屏幕阅读器窗口标题",
+    "screen reader window title": "屏幕阅读器窗口标题",
+    "Start the window title with the thread's status, like Needs approval, and its name, so screen readers read them first when you switch apps. Taskbars, shared screens, and time trackers see it too.": "将会话状态（如“待批准”）和会话名称放在窗口标题开头，让屏幕阅读器在切换应用时优先读出这些信息。任务栏、屏幕共享和时间跟踪工具也会显示这些信息。",
     "Beta": "测试版",
     "Boring sidebar (group by project)": "简洁侧边栏（按项目分组）",
     "Two-line folder rows": "双行文件夹列表",
@@ -7525,6 +7529,7 @@
     "T3 Code on {label} stops, rebuilds its database, and starts again. It will be offline for about {minutes} min. Running agents stop when it restarts.": "{label} 上的 T3 Code 会停止、重建数据库后再次启动，大约离线 {minutes} 分钟。重启时正在运行的智能体会停止。"
   },
   "apps/web/src/components/settings/settingsMessages.ts": {
+    "Screen reader window title": "屏幕阅读器窗口标题",
     "Preferences": "偏好设置",
     "More": "更多",
     "Settings": "设置",
@@ -7750,6 +7755,7 @@
     "Screen reader announcements": "屏幕阅读器播报"
   },
   "apps/web/src/components/settings/settingsPanels.messages.ts": {
+    "Screen reader": "屏幕阅读器",
     "Application update checks and automatic updates are disabled in this build.": "此版本已禁用应用更新检查和自动更新。",
     "Could not download update": "无法下载更新",
     "Download failed.": "下载失败。",
@@ -9977,6 +9983,15 @@
     "System monospace": "系统等宽字体"
   },
   "apps/web/src/components/sidebar/sidebarUi.messages.ts": {
+    "Dropping folders needs the desktop app": "拖入文件夹需要使用桌面应用",
+    "Browsers do not share folder paths. Use Add project to choose a folder.": "浏览器不会提供文件夹路径。请使用“添加项目”选择文件夹。",
+    "This computer's server is not connected yet": "此电脑的服务器尚未连接",
+    "Try again when it connects.": "连接后请重试。",
+    "Could not add \"{name}\"": "无法添加“{name}”",
+    "T3 Code could not read the folder's path.": "T3 Code 无法读取文件夹路径。",
+    "Only folders can be added as projects": "只能将文件夹添加为项目",
+    "Drop files on a thread to attach them.": "将文件拖到会话上即可添加为附件。",
+    "Drop folders to add projects": "拖入文件夹以添加项目",
     "Pinned 1 thread": "已置顶 1 个会话",
     "Undid settle of {count} thread": "已撤销对 {count} 个会话的收尾",
     "Undid settle of {count} threads": "已撤销对 {count} 个会话的收尾",

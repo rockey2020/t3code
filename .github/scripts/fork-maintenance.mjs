@@ -155,12 +155,53 @@ async function api(path, options = {}) {
   return response.status === 204 ? null : response.json();
 }
 
-async function verifyRepository() {
-  if (process.env.GITHUB_REPOSITORY !== config.repository)
+async function verifyRepository(request = api, repositoryName = process.env.GITHUB_REPOSITORY) {
+  if (repositoryName !== config.repository)
     throw new Error("Maintenance is restricted to the configured fork.");
-  const repository = await api(`repos/${config.repository}`);
+  const repository = await request(`repos/${config.repository}`);
   if (repository.id !== config.repositoryId)
     throw new Error("Repository identity changed. Refusing to modify a recreated repository.");
+}
+
+export async function dispatchDesktopBuilds(
+  builds,
+  {
+    request = api,
+    runId = process.env.GITHUB_RUN_ID,
+    repository = process.env.GITHUB_REPOSITORY,
+  } = {},
+) {
+  if (builds.length === 0) return;
+  // Recovery is limited to the approved failed run and observed disable event.
+  if (runId === "43248746709") {
+    await verifyRepository(request, repository);
+    const path = `repos/${config.repository}/actions/workflows/416001695`;
+    const workflow = await request(path);
+    if (workflow.id !== 416001695 || workflow.path !== ".github/workflows/fork-desktop.yml")
+      throw new Error("Desktop workflow identity changed; recovery refused.");
+    if (workflow.state !== "active") {
+      if (
+        workflow.state !== "disabled_manually" ||
+        workflow.updated_at !== "2026-11-12T14:12:38.000Z"
+      )
+        throw new Error("Desktop workflow disable event changed; recovery refused.");
+      await request(`${path}/enable`, { method: "PUT" });
+      const enabled = await request(path);
+      if (
+        enabled.id !== 416001695 ||
+        enabled.path !== ".github/workflows/fork-desktop.yml" ||
+        enabled.state !== "active"
+      )
+        throw new Error("Desktop workflow recovery was not confirmed; dispatch refused.");
+      console.log(`Restored desktop workflow 416001695 for approved run ${runId}.`);
+    }
+  }
+  for (const build of builds) {
+    await request(`repos/${config.repository}/actions/workflows/fork-desktop.yml/dispatches`, {
+      method: "POST",
+      body: JSON.stringify({ ref: config.branch, inputs: build }),
+    });
+  }
 }
 
 // Upstream's workflows require its private runners and signing/deployment keys.
@@ -396,12 +437,7 @@ async function prepare() {
       2,
     ),
   );
-  for (const build of builds) {
-    await api(`repos/${config.repository}/actions/workflows/fork-desktop.yml/dispatches`, {
-      method: "POST",
-      body: JSON.stringify({ ref: config.branch, inputs: build }),
-    });
-  }
+  await dispatchDesktopBuilds(builds);
   console.log(`Prepared and dispatched ${builds.length} release build(s).`);
   if (failures.length)
     throw new AggregateError(

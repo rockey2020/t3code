@@ -45,11 +45,12 @@ export function inspectUpstream(ref) {
     commit,
     candidates,
     status,
-    message: status === "native-chinese-integrated"
-      ? "Reviewed upstream GT Chinese catalogs detected. Preserve native runtime and catalogs; maintain remaining community coverage through its shared locale."
-      : status === "review-upstream-localization"
-        ? "New localization architecture detected. Review it before importing community patches."
-        : "No native Simplified Chinese catalog detected. Review upstream localization changes.",
+    message:
+      status === "native-chinese-integrated"
+        ? "Reviewed upstream GT Chinese catalogs detected. Preserve native runtime and catalogs; maintain remaining community coverage through its shared locale."
+        : status === "review-upstream-localization"
+          ? "New localization architecture detected. Review it before importing community patches."
+          : "No native Simplified Chinese catalog detected. Review upstream localization changes.",
   };
 }
 

@@ -185,7 +185,9 @@ export const layer = Layer.effect(
           Effect.flatMap((owner) =>
             electronDialog.showErrorBox(
               localizeDesktopText("This T3 home is unavailable", []),
-              DesktopHomeOwner.homeOwnedMessage(owner, (text, params) => localizeDesktopText(text, [], params)),
+              DesktopHomeOwner.homeOwnedMessage(owner, (text, params) =>
+                localizeDesktopText(text, [], params),
+              ),
             ),
           ),
           Effect.provideContext(homeOwnerContext),

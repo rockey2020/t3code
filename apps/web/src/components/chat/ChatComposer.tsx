@@ -404,6 +404,7 @@ export interface ChatComposerProps {
     customAnswer: string;
     activeQuestion: {
       id: string;
+      options: ReadonlyArray<unknown>;
       initialAnswer?: string | undefined;
       multiSelect?: boolean | undefined;
       allowCustomAnswer?: boolean | undefined;
@@ -2483,7 +2484,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           variant: "default",
           icon: <ReplyIcon />,
           title: replyTo.subagents
-            ? t("Replying to {names}", { names: replyTo.subagents.map((subagent) => subagent.title).join(", ") })
+            ? t("Replying to {names}", {
+                names: replyTo.subagents.map((subagent) => subagent.title).join(", "),
+              })
             : t("Replying to"),
           description: (
             <button
@@ -3582,9 +3585,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                         : activePendingProgress
                           ? isChoiceOnlyPendingQuestion
                             ? t("Choose an option above")
-                            : t(
-                                "Type your own answer, or leave this blank to use the selected option",
-                              )
+                            : activePendingProgress.activeQuestion?.options.length === 0
+                              ? t("Type your answer")
+                              : t(
+                                  "Type your own answer, or leave this blank to use the selected option",
+                                )
                           : projectSelectionRequired
                             ? t("Choose a project above to start a thread")
                             : showProviderUnavailable

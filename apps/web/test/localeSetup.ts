@@ -15,7 +15,9 @@ vi.mock("../src/i18n/runtime", async () => {
     },
     subscribeI18n: (listener: () => void) => {
       listeners.add(listener);
-      return () => { listeners.delete(listener); };
+      return () => {
+        listeners.delete(listener);
+      };
     },
     startI18n: () => {},
     whenLocaleReady: () => Promise.resolve(),

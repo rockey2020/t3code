@@ -1,6 +1,19 @@
 {
   "apps/desktop/src/window/menuLocalization.ts": {
-    "This T3 home is unavailable": "此 T3 数据目录不可用",
+    "Trust and Remember": "信任并记住",
+    "{host} has an untrusted certificate": "{host} 的证书不受信任",
+    "No trusted authority issued this certificate.": "此证书并非由受信任的机构签发。",
+    "This certificate is not for this address.": "此证书不适用于此地址。",
+    "This certificate has expired or is not valid yet.": "此证书已过期或尚未生效。",
+    "Issued to: {name}": "颁发给：{name}",
+    "Issued by: {name}": "颁发机构：{name}",
+    "Valid: {start} – {end}": "有效期：{start} – {end}",
+    "Fingerprint: {fingerprint}": "指纹：{fingerprint}",
+    "Trust it only if you know this certificate belongs to the site. Clearing this browser profile's cookies forgets it.": "仅在确认此证书属于该网站时才信任它。清除此浏览器配置的 Cookie 将撤销此信任。",
+    "Could not trust the certificate for {host}": "无法信任 {host} 的证书",
+    "T3 Code could not save this approval, so the page stays blocked. Check that the disk is not full and its data folder is writable, then try again.": "T3 Code 无法保存此批准，因此页面仍被阻止。请确认磁盘未满且数据文件夹可写，然后重试。",
+    "The desktop shortcut service restarted. Reconnecting…": "桌面快捷键服务已重启。正在重新连接…",
+    "This T3 home is unavailable": "此 T3 主目录不可用",
     "Another T3 Code server, such as the background service, is using this data directory, or an older background service is set up for it. Stop that server or try `t3 update`. If the older launcher cannot update, run `t3 service uninstall` and optionally reinstall with `t3 service install` from a current CLI. Use `npx t3@latest` if `t3` is missing or outdated, and pass `--base-dir` with the service's T3 home to each command. Then reopen T3 Code. You can also set a separate T3CODE_HOME and pair with the running server.": "另一个 T3 Code 服务器（例如后台服务）正在使用此数据目录，或此目录已配置旧版后台服务。请停止该服务器，或尝试 `t3 update`。如果旧版启动器无法更新，请运行 `t3 service uninstall`，并可使用当前 CLI 运行 `t3 service install` 重新安装。如果 `t3` 缺失或过旧，请使用 `npx t3@latest`，并在每条命令中通过 `--base-dir` 指定该服务的 T3 主目录。然后重新打开 T3 Code。你也可以设置单独的 T3CODE_HOME，并与正在运行的服务器配对。",
     "The T3 Code background service": "T3 Code 后台服务",
     "Another T3 Code server (for example `t3 serve`, or one started over SSH)": "另一个 T3 Code 服务端（例如 `t3 serve`，或通过 SSH 启动的服务端）",
@@ -313,6 +326,13 @@
     "Stopping…": "正在停止…"
   },
   "apps/web/src/components/chat/composerUi.messages.ts": {
+    "Still sending your previous message.": "仍在发送你的上一条消息。",
+    "Send again once it goes through or fails.": "请在发送成功或失败后重试。",
+    "Message may not have been sent": "消息可能未发送",
+    "Message not sent": "消息未发送",
+    "Your new draft was kept. Copy the failed message to send it again.": "已保留你的新草稿。复制发送失败的消息即可重新发送。",
+    "Copy message": "复制消息",
+    "Type your answer": "输入你的回答",
     "Replying to {names}": "回复 {names}",
     "Replying to": "回复",
     "Cancel reply": "取消回复",
@@ -870,6 +890,10 @@
     "Retry now": "立即重试"
   },
   "apps/web/src/components/chat/threadPanelUi.messages.ts": {
+    "Resolve the conflicts in this thread": "在此会话中解决冲突",
+    "Fix the failing checks in this thread": "在此会话中修复失败的检查",
+    "Added to the composer": "已添加到输入框",
+    "The task is in the composer. Read it over, then send.": "任务已放入输入框。请先检查内容，再发送。",
     "Try replying after the connection or pending input is resolved.": "请在连接恢复或待处理的输入完成后重试回复。",
     "No SSH route to {environment}": "没有通往 {environment} 的 SSH 连接路径",
     "Open from a computer to edit on {environment}": "请在电脑上打开，以在 {environment} 中编辑",
@@ -1926,6 +1950,8 @@
     "Sent messages to {threads} threads": "已向 {threads} 个会话发送消息"
   },
   "apps/web/src/components/chat/timelineUi.messages.ts": {
+    "Starting": "正在启动",
+    "Starting {provider}": "正在启动 {provider}",
     "Reply to this response": "回复此响应",
     "Go to quoted response: {label}": "前往引用的响应：{label}",
     "Go to the response this replies to: {label}": "前往所回复的响应：{label}",
@@ -3692,6 +3718,7 @@
     "Starting source control action...": "正在启动版本控制操作…"
   },
   "apps/web/src/components/globalUi.messages.ts": {
+    "Search is limited to {count} characters.": "搜索内容不能超过 {count} 个字符。",
     "Confirm action": "确认操作",
     "This action requires your confirmation.": "此操作需要你的确认。",
     "Cancel": "取消",
@@ -5001,7 +5028,7 @@
     "Added to the composer": "已添加到输入框",
     "The question is in the composer. Read it over, then send.": "问题已在输入框中。请检查后发送。",
     "The {kind} is in the composer. Type your question, then send.": "{kind} 已在输入框中。输入你的问题后发送。",
-    "The task is in the composer. Read it over, then send.": "任务已在输入框中。请检查后发送。",
+    "The task is in the composer. Read it over, then send.": "任务已放入输入框。请先检查内容，再发送。",
     "Could not open a thread": "无法打开会话",
     "Try again from the project, or open a thread first.": "请从项目中重试，或先打开一个会话。",
     "Asked in a thread": "已在会话中提问",
@@ -5412,6 +5439,8 @@
     "Double press": "按两次"
   },
   "apps/web/src/components/settings/settingsCode.messages.ts": {
+    "Offer {label} when adding or publishing a project": "添加或发布项目时提供 {label}",
+    "Offer when adding or publishing a project": "添加或发布项目时提供此选项",
     "No actions configured.": "尚未配置操作。",
     "setup@@projectAction": "初始化",
     "on settle": "收尾时",
@@ -7496,6 +7525,8 @@
     "T3 Code on {label} stops, rebuilds its database, and starts again. It will be offline for about {minutes} min. Running agents stop when it restarts.": "{label} 上的 T3 Code 会停止、重建数据库后再次启动，大约离线 {minutes} 分钟。重启时正在运行的智能体会停止。"
   },
   "apps/web/src/components/settings/settingsMessages.ts": {
+    "Preferences": "偏好设置",
+    "More": "更多",
     "Settings": "设置",
     "Interface language": "界面语言",
     "Language": "语言",
@@ -8089,6 +8120,7 @@
     "Signed out locally.": "已在本地退出登录。"
   },
   "apps/web/src/components/settings/settingsProviders.messages.ts": {
+    "Enter a valid value. It was not saved.": "请输入有效值。此值未保存。",
     "Account": "账户",
     "Connecting…": "正在连接…",
     "Starting sign-in…": "正在启动登录…",

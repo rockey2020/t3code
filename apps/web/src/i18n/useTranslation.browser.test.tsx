@@ -27,7 +27,9 @@ it("shares native locale changes and persistence with remaining community views"
   const listeners = new Set<() => void>();
   vi.mocked(subscribeI18n).mockImplementation((listener) => {
     listeners.add(listener);
-    return () => { listeners.delete(listener); };
+    return () => {
+      listeners.delete(listener);
+    };
   });
   vi.mocked(getI18nSnapshot).mockReturnValue({ locale: "en", translations: {} });
   // This probe exercises the locale adapter without application navigation.

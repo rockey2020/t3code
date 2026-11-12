@@ -22,6 +22,7 @@
     "@betteroffice/xlsx": "0.5.1",
     "@clerk/clerk-js": "catalog:",
     "@clerk/electron": "catalog:",
+    "@clerk/localizations": "catalog:",
     "@clerk/react": "catalog:",
     "@daypicker/react": "^10.0.2",
     "@dnd-kit/core": "^6.3.1",
@@ -91,8 +92,7 @@
     "unified": "catalog:",
     "use-sync-external-store": "^1.7.0",
     "vfile": "^6.0.3",
-    "zustand": "^5.1.0",
-    "@clerk/localizations": "catalog:"
+    "zustand": "^5.1.0"
   },
   "devDependencies": {
     "@effect/platform-node": "catalog:",

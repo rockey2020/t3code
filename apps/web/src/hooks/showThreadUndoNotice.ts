@@ -44,7 +44,10 @@ function countLabel(action: UndoOptions["action"], count: number) {
 }
 
 function threadUndoNoticeSummary(notice: Pick<UndoNotice, "action" | "count">): string {
-  return translateSidebarLabel(`${notice.action} ${countLabel(notice.action, notice.count)}`, readLocale());
+  return translateSidebarLabel(
+    `${notice.action} ${countLabel(notice.action, notice.count)}`,
+    readLocale(),
+  );
 }
 
 export function threadUndoLabel(keybindings: Parameters<typeof shortcutLabelForCommand>[0]) {
@@ -131,7 +134,11 @@ function refreshNotice() {
       );
       // Failures already raise a toast, so only what was actually restored is spoken.
       if (undone > 0) {
-        announce(translateNow(sidebarUiMessages, UNDONE_ACTION[latest.action][undone === 1 ? 0 : 1], { count: undone }));
+        announce(
+          translateNow(sidebarUiMessages, UNDONE_ACTION[latest.action][undone === 1 ? 0 : 1], {
+            count: undone,
+          }),
+        );
       }
     },
   });

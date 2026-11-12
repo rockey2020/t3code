@@ -1,6 +1,8 @@
 import { timelineSharedMessages } from "./timelineShared.messages";
 
 export const timelineUiMessages = {
+  Starting: "正在启动",
+  "Starting {provider}": "正在启动 {provider}",
   "Reply to this response": "回复此响应",
   "Go to quoted response: {label}": "前往引用的响应：{label}",
   "Go to the response this replies to: {label}": "前往所回复的响应：{label}",

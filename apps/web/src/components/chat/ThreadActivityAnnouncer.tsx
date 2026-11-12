@@ -134,7 +134,10 @@ export const ThreadActivityAnnouncer = memo(function ThreadActivityAnnouncer({
       clearDetail();
       return;
     }
-    const announcement = turn.announcement === null ? null : translateNow(globalUiMessages, turn.announcement as keyof typeof globalUiMessages);
+    const announcement =
+      turn.announcement === null
+        ? null
+        : translateNow(globalUiMessages, turn.announcement as keyof typeof globalUiMessages);
     if (detail.messages.length > 0) {
       // NVDA reads two regions written in the same frame in either order, so a
       // status that lands with a message is read as its last sentence.

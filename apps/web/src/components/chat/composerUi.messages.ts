@@ -2,6 +2,14 @@ import { translate, type Locale } from "../../i18n/locale";
 import { threadRuntimeMessages } from "./threadRuntime.messages";
 
 export const composerUiMessages = {
+  "Still sending your previous message.": "仍在发送你的上一条消息。",
+  "Send again once it goes through or fails.": "请在发送成功或失败后重试。",
+  "Message may not have been sent": "消息可能未发送",
+  "Message not sent": "消息未发送",
+  "Your new draft was kept. Copy the failed message to send it again.":
+    "已保留你的新草稿。复制发送失败的消息即可重新发送。",
+  "Copy message": "复制消息",
+  "Type your answer": "输入你的回答",
   "Replying to {names}": "回复 {names}",
   "Replying to": "回复",
   "Cancel reply": "取消回复",

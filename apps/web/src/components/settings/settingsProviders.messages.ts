@@ -1,6 +1,7 @@
 import { translate, type Locale } from "~/i18n/locale";
 
 export const settingsProvidersMessages = {
+  "Enter a valid value. It was not saved.": "请输入有效值。此值未保存。",
   Account: "账户",
   "Connecting…": "正在连接…",
   "Starting sign-in…": "正在启动登录…",

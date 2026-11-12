@@ -1,6 +1,8 @@
 import { translate, type Locale } from "~/i18n/locale";
 
 export const settingsCodeMessages = {
+  "Offer {label} when adding or publishing a project": "添加或发布项目时提供 {label}",
+  "Offer when adding or publishing a project": "添加或发布项目时提供此选项",
   "No actions configured.": "尚未配置操作。",
   "setup@@projectAction": "初始化",
   "on settle": "收尾时",

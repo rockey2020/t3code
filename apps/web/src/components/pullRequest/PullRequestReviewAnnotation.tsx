@@ -142,7 +142,9 @@ export function InlineReviewThreads({
   }
   if (authors.size === 0) authors.set("ghost", null);
   const label =
-    resolved.length === 1 ? t("Resolved conversation") : t("{count} resolved conversations", { count: resolved.length });
+    resolved.length === 1
+      ? t("Resolved conversation")
+      : t("{count} resolved conversations", { count: resolved.length });
   return (
     <>
       {resolved.length > 0 ? (

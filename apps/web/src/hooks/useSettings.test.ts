@@ -39,30 +39,33 @@ describe("client settings hydration", () => {
     timestampFormat: "12-hour" as const,
     favorites: [{ provider: ProviderInstanceId.make("codex_work"), model: "gpt-5.6" }],
   };
-  it.each([ ["en", "en"], ["zh-CN", "zh"] ])(
-    "migrates legacy %s to the native language setting once",
-    async (legacy, language) => {
-      const storage = new Map([["t3code-cn:locale", legacy]]);
-      const previous = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
-      Object.defineProperty(globalThis, "localStorage", {
-        configurable: true,
-        value: {
-          getItem: (key: string) => storage.get(key) ?? null,
-          removeItem: (key: string) => storage.delete(key),
-        },
+  it.each([
+    ["en", "en"],
+    ["zh-CN", "zh"],
+  ])("migrates legacy %s to the native language setting once", async (legacy, language) => {
+    const storage = new Map([["t3code-cn:locale", legacy]]);
+    const previous = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
+    Object.defineProperty(globalThis, "localStorage", {
+      configurable: true,
+      value: {
+        getItem: (key: string) => storage.get(key) ?? null,
+        removeItem: (key: string) => storage.delete(key),
+      },
+    });
+    try {
+      persistenceMocks.getClientSettings.mockResolvedValue(savedSettings);
+      await ensureClientSettingsHydrated();
+      expect(getClientSettings().language).toBe(language);
+      expect(persistenceMocks.setClientSettings).toHaveBeenCalledWith({
+        ...savedSettings,
+        language,
       });
-      try {
-        persistenceMocks.getClientSettings.mockResolvedValue(savedSettings);
-        await ensureClientSettingsHydrated();
-        expect(getClientSettings().language).toBe(language);
-        expect(persistenceMocks.setClientSettings).toHaveBeenCalledWith({ ...savedSettings, language });
-        expect(storage.has("t3code-cn:locale")).toBe(false);
-      } finally {
-        if (previous) Object.defineProperty(globalThis, "localStorage", previous);
-        else Reflect.deleteProperty(globalThis, "localStorage");
-      }
-    },
-  );
+      expect(storage.has("t3code-cn:locale")).toBe(false);
+    } finally {
+      if (previous) Object.defineProperty(globalThis, "localStorage", previous);
+      else Reflect.deleteProperty(globalThis, "localStorage");
+    }
+  });
 
   const onboardingCompletedAt = "2026-09-05T12:00:00.000Z";
   const complete = (current: ClientSettings) => ({ ...current, onboardingCompletedAt });
@@ -219,6 +222,28 @@ describe("persistClientSettingsPatch", () => {
 
     expect(persistenceMocks.setClientSettings).toHaveBeenNthCalledWith(1, firstSettings);
     expect(persistenceMocks.setClientSettings).toHaveBeenNthCalledWith(2, secondSettings);
+  });
+
+  // regression: #35010 a save in one tab reverted settings another tab saved after it loaded
+  it("keeps a setting another tab saved after this tab loaded", async () => {
+    vi.stubGlobal("window", new EventTarget());
+    try {
+      await ensureClientSettingsHydrated();
+      const otherTabSettings = { ...DEFAULT_CLIENT_SETTINGS, timestampFormat: "12-hour" as const };
+      persistenceMocks.getClientSettings.mockResolvedValue(otherTabSettings);
+      window.dispatchEvent(
+        Object.assign(new Event("storage"), { key: "t3code:client-settings:v1" }),
+      );
+
+      await persistClientSettingsPatch({ wordWrap: false });
+
+      expect(persistenceMocks.setClientSettings).toHaveBeenLastCalledWith({
+        ...otherTabSettings,
+        wordWrap: false,
+      });
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });
 

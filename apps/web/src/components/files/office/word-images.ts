@@ -2,7 +2,6 @@
 import type { ImageResolver } from "@betteroffice/docx/layout/render";
 import type { YrsMediaSource } from "@betteroffice/docx/yrs";
 import { officeImageBitmap } from "./image-bitmap";
-import type { VectorBitmap, VectorRequest } from "./vector-pictures";
 
 /** An embedded image's source, which names a part of the package the session reads. */
 const mediaToken = /^media:(0|[1-9]\d*)$/u;
@@ -10,28 +9,23 @@ const mediaToken = /^media:(0|[1-9]\d*)$/u;
 /** How many bytes of decoded images stay for repaints; the least recently drawn go first past it. */
 const budget = 256 * 1024 * 1024;
 
-type Size = { readonly width: number; readonly height: number };
-
 type Decoded = {
-  image: Promise<CanvasImageSource | null>;
+  readonly image: Promise<CanvasImageSource | null>;
   /** The decoded image once it is one; the shared placeholder is never closed. */
   bitmap: ImageBitmap | undefined;
-  /** An SVG picture, which the window rasterizes into `bitmap`; `failed` once it could not. */
-  vector: { readonly blob: Blob; failed: boolean } | undefined;
 };
 
 /**
- * Resolves the display list's images in a worker: `media:{n}` sources decode from the session's bytes, `data:` and
- * `blob:` ones in place, and nothing else, so painting never makes a request. Undecodable parts paint a grey box. SVG
- * pictures, which the engine converts WMF and EMF ones to, need the window: `vectors` lists them, `provide` takes them.
+ * Resolves the display list's images in a worker, where there is no `Image` element: a `media:{n}` source decodes
+ * from the bytes the session reads, and a `data:` or `blob:` source decodes in place. Anything else, such as a remote
+ * address, resolves to nothing, so painting never makes a request. A part that is missing or cannot be decoded paints a
+ * grey box, as the window's resolver does. Decoded images stay for repaints within `budget`.
  */
 export function createBitmapImageResolver(media: (token: string) => YrsMediaSource | null) {
   const cache = new Map<string, Decoded>();
   const placeholder = greyBox();
-  // The SVG pictures the paint since the last `vectors` drew.
-  const drawn = new Set<string>();
 
-  const decode = (source: string, entry: Decoded): Promise<CanvasImageSource | null> => {
+  const decode = (source: string): Promise<CanvasImageSource | null> => {
     const token = mediaToken.test(source);
     const found = token ? media(source) : undefined;
 
@@ -41,18 +35,10 @@ export function createBitmapImageResolver(media: (token: string) => YrsMediaSour
       ? Promise.resolve(new Blob([new Uint8Array(found.bytes)], { type: found.mimeType }))
       : fetch(source).then((response) => response.blob());
 
-    return blob.then((decoded) => {
-      if (decoded.type === "image/svg+xml") {
-        entry.vector = { blob: decoded, failed: false };
-
-        return null;
-      }
-
-      return officeImageBitmap(decoded).then(
-        (bitmap): CanvasImageSource => bitmap,
-        () => (token ? placeholder : null),
-      );
-    });
+    return blob.then(officeImageBitmap).then(
+      (bitmap): CanvasImageSource => bitmap,
+      () => (token ? placeholder : null),
+    );
   };
 
   const resolve: ImageResolver = (source) => {
@@ -66,22 +52,18 @@ export function createBitmapImageResolver(media: (token: string) => YrsMediaSour
       cache.delete(source);
       cache.set(source, cached);
 
-      if (cached.vector) drawn.add(source);
-
-      return cached.vector
-        ? Promise.resolve(cached.bitmap ?? (cached.vector.failed ? placeholder : null))
-        : cached.image;
+      return cached.image;
     }
 
-    const entry: Decoded = { image: Promise.resolve(null), bitmap: undefined, vector: undefined };
+    const entry: Decoded = {
+      image: decode(source).then((image) => {
+        if (image instanceof ImageBitmap) entry.bitmap = image;
 
-    entry.image = decode(source, entry).then((decoded) => {
-      if (decoded instanceof ImageBitmap) entry.bitmap = decoded;
+        return image;
+      }),
+      bitmap: undefined,
+    };
 
-      if (entry.vector) drawn.add(source);
-
-      return decoded;
-    });
     cache.set(source, entry);
 
     return entry.image;
@@ -89,45 +71,6 @@ export function createBitmapImageResolver(media: (token: string) => YrsMediaSour
 
   return {
     resolve,
-    /**
-     * The SVG pictures the paints since the last call drew without a bitmap, or with one smaller than `sizes` asks, at
-     * the size to rasterize them; a picture absent from `sizes` rasterizes at its own size.
-     */
-    vectors(sizes: ReadonlyMap<string, Size>): VectorRequest[] {
-      const requests = [...drawn].flatMap((source) => {
-        const entry = cache.get(source);
-        const size = sizes.get(source);
-
-        if (!entry?.vector || entry.vector.failed) return [];
-
-        if (entry.bitmap && (!size || covers(entry.bitmap, size))) return [];
-
-        return [{ asset: source, blob: entry.vector.blob, size }];
-      });
-
-      drawn.clear();
-
-      return requests;
-    },
-    /** Keeps the window's rasterized SVG pictures in place of coarser ones. */
-    provide(bitmaps: readonly VectorBitmap[]) {
-      for (const { asset, bitmap } of bitmaps) {
-        const entry = cache.get(asset);
-
-        if (!entry?.vector || (bitmap && entry.bitmap && covers(entry.bitmap, bitmap))) {
-          bitmap?.close();
-          continue;
-        }
-
-        if (!bitmap) {
-          entry.vector.failed = !entry.bitmap;
-          continue;
-        }
-
-        entry.bitmap?.close();
-        entry.bitmap = bitmap;
-      }
-    },
     /** Closes the least recently drawn images past the budget. Call it between paints, never during one. */
     trim() {
       const size = (entry: Decoded) =>
@@ -148,10 +91,6 @@ export function createBitmapImageResolver(media: (token: string) => YrsMediaSour
       );
     },
   };
-}
-
-function covers(bitmap: Size, size: Size) {
-  return bitmap.width >= size.width && bitmap.height >= size.height;
 }
 
 /** The grey box a missing image paints: one pixel the painter stretches over the image's place. */

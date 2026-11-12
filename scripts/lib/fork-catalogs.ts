@@ -1,5 +1,6 @@
 // @effect-diagnostics nodeBuiltinImport:off
-// Reads native GT catalogs and the remaining desktop/community translations as data.
+// Reads the fork's zh-CN catalogs as text: they live beside the UI they translate (web,
+// desktop menus), so importing them would cross package boundaries.
 import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
@@ -71,23 +72,6 @@ export function readCatalogs() {
     }
     const literals = text.match(CJK_LITERAL)?.length ?? 0;
     if (literals !== found.length) unparsed.push(`${file}: ${literals - found.length}`);
-  }
-  for (const app of ["web", "mobile"]) {
-    const directory = `apps/${app}/src/i18n/translations`;
-    const source: Record<string, string> = JSON.parse(
-      NodeFS.readFileSync(NodePath.join(repoRoot, directory, "en.json"), "utf8"),
-    );
-    const localized: Record<string, string> = JSON.parse(
-      NodeFS.readFileSync(NodePath.join(repoRoot, directory, "zh.json"), "utf8"),
-    );
-    for (const [key, text] of Object.entries(source)) {
-      entries.push({
-        file: `${directory}/zh.json`,
-        at: `${directory}/zh.json:${key}`,
-        source: text,
-        localized: localized[key] ?? "",
-      });
-    }
   }
   return { entries, unparsed };
 }

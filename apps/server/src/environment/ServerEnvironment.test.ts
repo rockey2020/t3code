@@ -123,47 +123,6 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("ServerEnvironmen
       }
     }),
   );
-  it.effect.each([{ desktopAppUpdate: false }, { desktopAppUpdate: true }])(
-    "keeps updates disabled even when desktop installation is available ($desktopAppUpdate)",
-    ({ desktopAppUpdate }) =>
-      Effect.gen(function* () {
-        const fs = yield* FileSystem.FileSystem;
-        const baseDir = yield* fs.makeTempDirectoryScoped();
-        const config = yield* makeServerConfig(baseDir);
-        yield* fs.makeDirectory(config.stateDir, { recursive: true });
-        const descriptor = yield* Effect.gen(function* () {
-          const environment = yield* ServerEnvironment.ServerEnvironment;
-          return yield* environment.getDescriptor;
-        }).pipe(
-          Effect.provide(
-            ServerEnvironment.layer.pipe(
-              Layer.provide(layerEmptySecretStore),
-              Layer.provide(
-                ServerConfig.layer({
-                  ...config,
-                  mode: "desktop",
-                  desktopTelemetryControlFd: 5,
-                  desktopAppUpdate,
-                }),
-              ),
-            ),
-          ),
-          Effect.provideService(HostProcess.Environment, {}),
-        );
-        const capabilities = descriptor.capabilities;
-        expect({
-          serverSelfUpdate: capabilities.serverSelfUpdate,
-          desktopAppUpdate: capabilities.desktopAppUpdate,
-          desktopAppChannelSwitch: capabilities.desktopAppChannelSwitch,
-          serverSelfUpdateProgress: capabilities.serverSelfUpdateProgress,
-        }).toEqual({
-          serverSelfUpdate: undefined,
-          desktopAppUpdate: undefined,
-          desktopAppChannelSwitch: undefined,
-          serverSelfUpdateProgress: undefined,
-        });
-      }),
-  );
   it.effect.each([
     { platform: "darwin", architecture: "arm64", supported: true },
     { platform: "linux", architecture: "x64", supported: true },

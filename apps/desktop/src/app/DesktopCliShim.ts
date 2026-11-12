@@ -90,13 +90,12 @@ export const renderCliShim = (input: {
     ...header,
     // Extract-and-run would make the runtime start the app instead of mounting it.
     "unset APPIMAGE_EXTRACT_AND_RUN",
-    // Its own session keeps a group signal (Ctrl-C, SSH hangup) from unmounting it under the
-    // running server; the traps unmount it after. Without setsid the extract fallback runs.
+    // The runtime stays mounted until killed; traps unmount it because background jobs ignore Ctrl-C.
     "work=$(mktemp -d) || exit 1",
-    'setsid "$app" --appimage-mount >"$work/mount" 2>/dev/null &',
+    '"$app" --appimage-mount >"$work/mount" 2>/dev/null &',
     "mounter=$!",
     `trap 'kill "$mounter" 2>/dev/null; rm -rf "$work"' EXIT`,
-    "trap 'exit 130' INT TERM HUP",
+    "trap 'exit 130' INT TERM",
     "mount=",
     'while kill -0 "$mounter" 2>/dev/null; do',
     '  mount=$(head -n 1 "$work/mount")',

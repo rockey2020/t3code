@@ -95,7 +95,6 @@ const localizedKey = (localized: string) => localized.trim().replace(/[…。：
 
 describe("Chinese catalogs", () => {
   const { entries, unparsed } = readCatalogs();
-  const communityEntries = entries.filter((entry) => !entry.file.endsWith(".json"));
 
   it("reads every Chinese string in a catalog file as an entry", () => {
     expect(entries.length).toBeGreaterThan(0);
@@ -103,9 +102,8 @@ describe("Chinese catalogs", () => {
     expect(entries).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          file: "apps/web/src/i18n/translations/zh.json",
-          source: "Settings",
-          localized: "设置",
+          source: "Rotate this webhook URL?\nThe current URL stops working.",
+          localized: "更换此 webhook URL？\n当前 URL 将失效。",
         }),
         ...[
           ["About {displayName}", "关于 {displayName}"],
@@ -134,7 +132,7 @@ describe("Chinese catalogs", () => {
   });
 
   it("translates the same English text the same way everywhere", () => {
-    const bySource = Map.groupBy(communityEntries, (entry) => sourceKey(entry.source));
+    const bySource = Map.groupBy(entries, (entry) => sourceKey(entry.source));
     const conflicts = [...bySource.values()]
       .filter((group) => new Set(group.map((entry) => localizedKey(entry.localized))).size > 1)
       .map((group) => group.map((entry) => `${entry.at} ${entry.source} → ${entry.localized}`));
@@ -142,7 +140,7 @@ describe("Chinese catalogs", () => {
   });
 
   it("uses the glossary term for recurring concepts", () => {
-    const misses = communityEntries.flatMap((entry) => {
+    const misses = entries.flatMap((entry) => {
       // Placeholders and file names are not prose to translate.
       const source = (entry.source.split("@@")[0] ?? "").replace(
         /\{\w+\}|[\w-]+\.[a-z]{2,4}\b/g,
@@ -160,7 +158,7 @@ describe("Chinese catalogs", () => {
   });
 
   it("keeps product names and abbreviations in English", () => {
-    const misses = communityEntries.flatMap((entry) => {
+    const misses = entries.flatMap((entry) => {
       const source = entry.source.split("@@")[0] ?? "";
       return KEEP_ENGLISH.map((term) =>
         typeof term === "string" ? new RegExp(`\\b${escapeRegExp(term)}\\b`) : term,

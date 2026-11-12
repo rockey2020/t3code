@@ -114,11 +114,6 @@ export const isAuthorizationFailure = (cause: Cause.Cause<unknown>) =>
 
 const MAX_EXPECTED_FAILURE_RETRY_DELAY_MS = 30_000;
 
-export const subscriptionRetryDelay = (base: Duration.Input, retries: number) =>
-  Duration.millis(
-    Math.min(Duration.toMillis(base) * 2 ** retries, MAX_EXPECTED_FAILURE_RETRY_DELAY_MS),
-  );
-
 export type EnvironmentRpcInput<TTag extends EnvironmentRpcTag> = Parameters<RpcMethod<TTag>>[0];
 
 export type EnvironmentRpcSuccess<TTag extends EnvironmentUnaryRpcTag> =
@@ -141,7 +136,7 @@ export type EnvironmentRpcStreamFailure<TTag extends EnvironmentStreamRpcTag> =
     ? E
     : never;
 
-export const currentSession = Effect.fn("EnvironmentRpc.currentSession")(function* () {
+const currentSession = Effect.fn("EnvironmentRpc.currentSession")(function* () {
   const supervisor = yield* EnvironmentSupervisor.EnvironmentSupervisor;
   return yield* SubscriptionRef.get(supervisor.session).pipe(
     Effect.flatMap(
@@ -199,7 +194,7 @@ const authorizeRequest = Effect.fn("EnvironmentRpc.authorize")(function* (
   yield* guard.authorize(supervisor.target.environmentId, method, input);
 });
 
-export const requestInSession = Effect.fn("EnvironmentRpc.request")(function* <
+const requestInSession = Effect.fn("EnvironmentRpc.request")(function* <
   TTag extends EnvironmentUnaryRpcTag,
 >(session: RpcSession, tag: TTag, input: EnvironmentRpcInput<TTag>) {
   const supervisor = yield* EnvironmentSupervisor.EnvironmentSupervisor;
@@ -239,23 +234,16 @@ export function runStreamGuarded<TTag extends EnvironmentStreamCommandRpcTag>(
   EnvironmentSupervisor.EnvironmentSupervisor
 > {
   return Stream.unwrap(
-    currentSession().pipe(Effect.map((session) => runStreamInSession(session, tag, input))),
-  );
-}
-
-export function runStreamInSession<TTag extends EnvironmentStreamCommandRpcTag>(
-  session: RpcSession,
-  tag: TTag,
-  input: EnvironmentRpcInput<TTag>,
-): Stream.Stream<
-  EnvironmentRpcStreamValue<TTag>,
-  EnvironmentRpcStreamFailure<TTag> | EnvironmentAuthorizationError,
-  EnvironmentSupervisor.EnvironmentSupervisor
-> {
-  const method = session.client[tag] as (
-    input: EnvironmentRpcInput<TTag>,
-  ) => Stream.Stream<EnvironmentRpcStreamValue<TTag>, EnvironmentRpcStreamFailure<TTag>>;
-  return Stream.unwrap(authorizeRequest(tag, input).pipe(Effect.map(() => method(input)))).pipe(
+    authorizeRequest(tag, input).pipe(
+      Effect.andThen(currentSession()),
+      Effect.map((session) => {
+        const method = session.client[tag] as (
+          input: EnvironmentRpcInput<TTag>,
+        ) => Stream.Stream<EnvironmentRpcStreamValue<TTag>, EnvironmentRpcStreamFailure<TTag>>;
+        return method(input);
+      }),
+    ),
+  ).pipe(
     Stream.withSpan("EnvironmentRpc.runStream", {
       attributes: { "rpc.method": tag },
     }),
@@ -383,9 +371,12 @@ function subscribeDynamicMapped<TTag extends EnvironmentSubscriptionRpcTag, A>(
                         ) {
                           return handled;
                         }
-                        const retryDelay = subscriptionRetryDelay(
-                          options.retryExpectedFailureAfter,
-                          expectedFailureRetries,
+                        const retryDelay = Duration.millis(
+                          Math.min(
+                            Duration.toMillis(options.retryExpectedFailureAfter) *
+                              2 ** expectedFailureRetries,
+                            MAX_EXPECTED_FAILURE_RETRY_DELAY_MS,
+                          ),
                         );
                         expectedFailureRetries += 1;
                         return handled.pipe(
@@ -485,7 +476,7 @@ export const subscribeVcsBranch = (
                   includeRemote: false,
                 }).pipe(
                   Stream.filter((event) => event._tag !== "remoteUpdated"),
-                  Stream.map(({ local }) => ({ refName: local.refName, isRepo: local.isRepo })),
+                  Stream.map((event) => ({ refName: event.local.refName })),
                 ),
           ),
         ),

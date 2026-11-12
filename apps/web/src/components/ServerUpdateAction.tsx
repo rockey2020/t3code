@@ -219,7 +219,6 @@ export function ServerUpdatesAction({
               "Update the T3 Code desktop apps on {servers}? They will close and relaunch on those machines.",
               { servers: desktopTargets.map((target) => target.serverLabel).join(", ") },
             ),
-            { initialFocus: "confirm" },
           )) ?? true;
         if (!confirmed) return;
       }
@@ -342,7 +341,6 @@ export function ServerUpdateAction({
             "Update the T3 Code desktop app that runs the {server}? It will close and relaunch on that machine.",
             { server: serverLabel },
           ),
-          { initialFocus: "confirm" },
         )) ?? true;
       if (!confirmed) {
         return;

@@ -84,19 +84,6 @@ const translated = new Set(
       ),
     ),
 );
-for (const app of ["web", "mobile"]) {
-  const directory = `apps/${app}/src/i18n/translations`;
-  const english: Record<string, string> = JSON.parse(
-    NodeFS.readFileSync(`${directory}/en.json`, "utf8"),
-  );
-  const chinese: Record<string, string> = JSON.parse(
-    NodeFS.readFileSync(`${directory}/zh.json`, "utf8"),
-  );
-  for (const [key, source] of Object.entries(english)) {
-    if (chinese[key]?.trim()) translated.add(normalize(source));
-    else console.log(`${directory}/zh.json:${key}  Missing translation: ${source}`);
-  }
-}
 const keptEnglish = new Set(
   NodeFS.readFileSync(KEEP_ENGLISH_PATH, "utf8")
     .split("\n")

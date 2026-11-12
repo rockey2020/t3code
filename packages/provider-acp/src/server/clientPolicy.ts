@@ -1,5 +1,5 @@
 // @effect-diagnostics nodeBuiltinImport:off
-import type { RuntimeMode } from "@t3tools/contracts";
+import type { ProviderRequestKind, RuntimeMode } from "@t3tools/contracts";
 import type * as EffectAcpSchema from "effect-acp/compat";
 import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
@@ -222,8 +222,7 @@ export function acpClientExecuteDisposition(
 }
 
 export interface AcpApprovalGrantInput {
-  /** The approved request's ACP tool kind, after ID-only requests take their tracked call's kind. */
-  readonly toolKind: string;
+  readonly kind: ProviderRequestKind;
   readonly scope: "session" | "turn";
   readonly turnKey: string;
 }
@@ -233,14 +232,13 @@ export interface AcpClientPolicyGrants {
   readonly allowsExecute: (turnKey: string | null) => boolean;
 }
 
-/** ACP cannot link commands to terminals; approved execute requests grant execution for the turn or accepted session. */
+/** ACP cannot link commands to terminals; command approvals grant execution for the turn or accepted session. */
 export function makeAcpClientPolicyGrants(): AcpClientPolicyGrants {
   let sessionExecute = false;
   let turnExecute: string | null = null;
   return {
     recordApproval: (input) => {
-      // Other kinds also show as command cards, but approving them must not open terminals.
-      if (input.toolKind !== "execute") return;
+      if (input.kind !== "command") return;
       if (input.scope === "session") {
         sessionExecute = true;
       } else {

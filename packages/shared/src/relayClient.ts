@@ -141,8 +141,6 @@ const INSTALL_LOCK_RETRY_DELAY = "100 millis";
 // Legacy locks have no owner; allow both ten-minute download stages and the install tail.
 const INSTALL_LOCK_LEGACY_STALE_MS = 30 * 60 * 1_000;
 const VERSION_PROBE_TIMEOUT = "10 seconds";
-// Antivirus scans can hold the first launch of a freshly downloaded binary for 20-30 s.
-const INSTALL_VALIDATION_TIMEOUT = "2 minutes";
 
 const ACTIVATE_RETRY_COUNT = 40;
 const ACTIVATE_RETRY_DELAY = "250 millis";
@@ -301,23 +299,19 @@ export const makeCloudflaredRelayClient = Effect.fn("cloudflared.make")(function
     return platform === "win32" || (info.value.mode & 0o111) !== 0;
   });
 
-  const runVersionProbe = Effect.fn("cloudflared.runVersionProbe")(function* (
-    executablePath: string,
-    timeout: Duration.Input,
-  ) {
-    return yield* spawner
-      .string(ChildProcess.make(executablePath, ["version"], { stdin: "ignore", stderr: "ignore" }))
-      .pipe(
-        Effect.map(parseCloudflaredVersionOutput),
-        Effect.timeoutOption(timeout),
-        Effect.map(Option.getOrNull),
-        Effect.orElseSucceed(() => null),
-      );
-  });
-
   // Cache successful version probes per file revision; do not let transient failures hide valid binaries.
   const versionCache = yield* Cache.makeWith(
-    (key: VersionProbeKey) => runVersionProbe(key.executablePath, VERSION_PROBE_TIMEOUT),
+    (key: VersionProbeKey) =>
+      spawner
+        .string(
+          ChildProcess.make(key.executablePath, ["version"], { stdin: "ignore", stderr: "ignore" }),
+        )
+        .pipe(
+          Effect.map(parseCloudflaredVersionOutput),
+          Effect.timeoutOption(VERSION_PROBE_TIMEOUT),
+          Effect.map(Option.getOrNull),
+          Effect.orElseSucceed(() => null),
+        ),
     {
       capacity: 16,
       timeToLive: (exit) =>
@@ -654,7 +648,7 @@ export const makeCloudflaredRelayClient = Effect.fn("cloudflared.make")(function
       }
       yield* report("validating");
       // Verify the pin so mislabeled assets cannot cause repeated redownloads.
-      const installedVersion = yield* runVersionProbe(executablePath, INSTALL_VALIDATION_TIMEOUT);
+      const installedVersion = yield* probeVersion(executablePath);
       if (installedVersion !== CLOUDFLARED_VERSION) {
         return yield* new RelayClientInstallError({
           reason: "validation_failed",

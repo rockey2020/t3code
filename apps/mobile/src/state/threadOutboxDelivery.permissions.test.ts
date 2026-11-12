@@ -41,7 +41,7 @@ const state = vi.hoisted(() => ({
   },
   config: {
     shellThreadFamilies: false,
-    providers: [{ instanceId: "codex", driver: "codex", models: [] }],
+    providers: [{ instanceId: "codex", driver: "codex" }],
     environment: { capabilities: {} },
   },
 }));

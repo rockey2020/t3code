@@ -26,10 +26,7 @@ interface RecordedRegistration {
   readonly files: Array<{ readonly path: string; readonly content: string }>;
   readonly commands: Array<{ readonly command: string; readonly args: ReadonlyArray<string> }>;
   readonly copies: Array<{ readonly source: string; readonly destination: string }>;
-  readonly icons: Array<{ readonly path: string; readonly bytes: ReadonlyArray<number> }>;
 }
-
-const ICON_BYTES = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]);
 
 const makeEnvironment = (path: Path.Path, overrides: Record<string, unknown> = {}) =>
   DesktopEnvironment.DesktopEnvironment.of({
@@ -72,7 +69,7 @@ const layerHandler = (
     readonly writeError?: PlatformError.PlatformError;
     readonly existingEntry?: string;
     readonly iconSource?: string;
-    readonly iconWriteError?: PlatformError.PlatformError;
+    readonly iconCopyError?: PlatformError.PlatformError;
   } = {},
 ) =>
   DesktopLinuxUrlHandler.layer.pipe(
@@ -95,25 +92,10 @@ const layerHandler = (
         }),
         FileSystem.layerNoop({
           copyFile: (source, destination) =>
-            Effect.sync(() => {
-              recorded.copies.push({ source, destination });
-            }),
-          readFile: (path) =>
-            path === input.iconSource
-              ? Effect.succeed(ICON_BYTES)
-              : Effect.fail(
-                  PlatformError.systemError({
-                    _tag: "NotFound",
-                    module: "FileSystem",
-                    method: "readFile",
-                    pathOrDescriptor: path,
-                  }),
-                ),
-          writeFile: (path, bytes) =>
-            input.iconWriteError
-              ? Effect.fail(input.iconWriteError)
+            input.iconCopyError
+              ? Effect.fail(input.iconCopyError)
               : Effect.sync(() => {
-                  recorded.icons.push({ path, bytes: [...bytes] });
+                  recorded.copies.push({ source, destination });
                 }),
           readFileString: () => Effect.succeed(input.existingEntry ?? ""),
           makeDirectory: (path) =>
@@ -180,7 +162,6 @@ const emptyRecording = (): RecordedRegistration => ({
   files: [],
   commands: [],
   copies: [],
-  icons: [],
 });
 
 describe("DesktopLinuxUrlHandler", () => {
@@ -309,21 +290,22 @@ describe("DesktopLinuxUrlHandler", () => {
         }),
       });
       assert.deepEqual(recorded.files, []);
-      assert.deepEqual(recorded.copies, [], "icon must not be copied out of the app bundle");
-      assert.deepEqual(recorded.icons, [{ path: iconPath, bytes: [...ICON_BYTES] }]);
+      assert.deepEqual(recorded.copies, [
+        { source: "/tmp/.mount_T3/resources/icon.png", destination: iconPath },
+      ]);
       assert.equal(recorded.commands.at(-1)?.command, "xdg-mime");
     });
   });
 
-  it.effect("still registers the handler when installing its icon fails", () => {
+  it.effect("still registers the handler when copying its icon fails", () => {
     const recorded = emptyRecording();
     return Effect.gen(function* () {
       yield* runRegister(recorded, {
         iconSource: "/tmp/.mount_T3/resources/icon.png",
-        iconWriteError: PlatformError.systemError({
+        iconCopyError: PlatformError.systemError({
           _tag: "PermissionDenied",
           module: "FileSystem",
-          method: "writeFile",
+          method: "copyFile",
           description: "read-only icon directory",
         }),
       });

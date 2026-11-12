@@ -255,10 +255,7 @@ it("isolates drafts by environment, thread and request and discards only resolve
     makeThreadRequestsResolvedAnnouncer(
       environmentId,
       threadRef.threadId,
-    )([
-      { id: RuntimeRequestId.make("first"), status: "resolved" },
-      { id: RuntimeRequestId.make("second"), status: "pending" },
-    ]),
+    )([RuntimeRequestId.make("second")]),
   );
   for (const [index, scope] of scopes.entries()) {
     await show(scope);

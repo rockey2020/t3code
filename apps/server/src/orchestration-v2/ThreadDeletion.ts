@@ -183,8 +183,7 @@ export const planThreadDeletion = Effect.fn("ThreadDeletion.planThreadDeletion")
   }
 
   for (const session of projection.providerSessions) {
-    // An errored session can still own a reusable live runtime.
-    if (session.status === "stopped") continue;
+    if (session.status === "stopped" || session.status === "error") continue;
     yield* emitEvent({
       type: "provider-session.detached",
       threadId: command.threadId,

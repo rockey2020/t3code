@@ -92,14 +92,6 @@ function resolveThreadProviderSession(projection: Projection): ProviderSession |
   );
 }
 
-export function threadSteersDuringCompaction(projection: Projection | null | undefined): boolean {
-  if (projection == null) return false;
-  return (
-    resolveThreadProviderSession(projection)?.capabilities.turns.activeSteeringDuringCompaction ===
-    true
-  );
-}
-
 export function threadSupportsProviderHandoff(projection: Projection | null | undefined): boolean {
   if (projection == null) return false;
   const session = resolveThreadProviderSession(projection);
@@ -179,10 +171,6 @@ export function deriveThreadQueueWorkflowState(projection: Projection): ThreadQu
       projection.thread.deletedAt == null,
     canPromoteToSteer:
       promoteSkipsCompaction ||
-      ((activeRun?.status === "preparing" || activeRun?.status === "starting") &&
-        (capabilities === undefined ||
-          capabilities.supportsActiveSteering ||
-          capabilities.supportsSteeringByInterruptRestart)) ||
       (hasSteerableProviderTurn &&
         (capabilities?.supportsActiveSteering === true ||
           capabilities?.supportsSteeringByInterruptRestart === true)),

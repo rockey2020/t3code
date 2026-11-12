@@ -1,8 +1,4 @@
 export const settingsDetailUiMessages = {
-  "Screen reader window title": "屏幕阅读器窗口标题",
-  "screen reader window title": "屏幕阅读器窗口标题",
-  "Start the window title with the thread's status, like Needs approval, and its name, so screen readers read them first when you switch apps. Taskbars, shared screens, and time trackers see it too.":
-    "将会话状态（如“待批准”）和会话名称放在窗口标题开头，让屏幕阅读器在切换应用时优先读出这些信息。任务栏、屏幕共享和时间跟踪工具也会显示这些信息。",
   Beta: "测试版",
   "Boring sidebar (group by project)": "简洁侧边栏（按项目分组）",
   "Two-line folder rows": "双行文件夹列表",

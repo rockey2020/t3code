@@ -174,13 +174,8 @@ it.effect.each([
   { order: "cleanup-first", restoreFiles: true },
   { order: "rollback-first", restoreFiles: true },
   { order: "cleanup-first", restoreFiles: false, unmanaged: true },
-  { order: "cleanup-first", restoreFiles: true, leavesFolder: true },
-  { order: "cleanup-first", restoreFiles: false, leavesFolder: true },
-  { order: "cleanup-first", restoreFiles: true, leavesFolder: true, shared: true },
-  { order: "cleanup-first", restoreFiles: true, leavesFolder: true, createFails: true },
-])("locks rollback with %s", (row) =>
+])("locks rollback with %s", ({ order, restoreFiles, unmanaged = false }) =>
   Effect.gen(function* () {
-    const { order, restoreFiles, unmanaged, leavesFolder, shared, createFails } = row;
     const fileSystem = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
     const workspaceRoot = yield* fileSystem.realPath(
@@ -190,7 +185,7 @@ it.effect.each([
     const worktreePath = unmanaged
       ? path.join(workspaceRoot, "elsewhere", "feature")
       : path.join(worktreesDir, "repo", "feature");
-    yield* fileSystem.makeDirectory(path.join(worktreePath, ".git"), { recursive: true });
+    yield* fileSystem.makeDirectory(worktreePath, { recursive: true });
     const threadId = ThreadId.make("rollback-worktree");
     const projectId = ProjectId.make("rollback-worktree-project");
     const providerThreadId = ProviderThreadId.make("rollback-worktree-provider-thread");
@@ -251,19 +246,14 @@ it.effect.each([
                   path: worktreePath,
                 });
                 calls.push("create");
-                if (createFails) return yield* Effect.die("the branch is gone");
-                yield* fileSystem
-                  .makeDirectory(path.join(worktreePath, ".git"), { recursive: true })
-                  .pipe(Effect.orDie);
+                yield* fileSystem.makeDirectory(worktreePath).pipe(Effect.orDie);
                 return {} as never;
               }),
           }),
           Layer.mock(CheckpointService.CheckpointServiceV2)({
             restore: () =>
               Effect.gen(function* () {
-                assert.isTrue(
-                  yield* fileSystem.exists(path.join(worktreePath, ".git")).pipe(Effect.orDie),
-                );
+                assert.isTrue(yield* fileSystem.exists(worktreePath).pipe(Effect.orDie));
                 calls.push("files");
               }),
           }),
@@ -282,31 +272,16 @@ it.effect.each([
               Effect.succeed({
                 schemaVersion: 1,
                 snapshotSequence: 0,
-                threads: shared
-                  ? [
-                      {
-                        id: ThreadId.make("rollback-worktree-sharer"),
-                        projectId,
-                        worktreePath,
-                        deletedAt: null,
-                        lineage: {},
-                      },
-                    ]
-                  : [],
+                threads: [],
                 archivedThreads: [],
-              } as never),
-            getCheckpointContext: () => Effect.succeed({ checkpointScopes: [] } as never),
-            getThreadProviderContext: () => Effect.succeed({ providerSessions: [] } as never),
+              }),
           }),
           Layer.mock(ProviderSessionManager.ProviderSessionManagerV2)({
             open: (input) =>
               Effect.gen(function* () {
                 assert.equal(input.runtimePolicy.cwd, worktreePath);
                 if (!(yield* fileSystem.exists(worktreePath).pipe(Effect.orDie))) {
-                  return yield* new ProviderWorkspaceMissingError({
-                    threadId,
-                    cwd: worktreePath,
-                  });
+                  return yield* new ProviderWorkspaceMissingError({ threadId, cwd: worktreePath });
                 }
                 calls.push("session");
                 yield* Deferred.succeed(openEntered, undefined);
@@ -331,11 +306,6 @@ it.effect.each([
           cleanupEntered = true;
           if (order === "cleanup-first") yield* Deferred.await(release);
           yield* fileSystem.remove(worktreePath, { recursive: true, force: true });
-          // A failed `git worktree remove` can leave the folder without its checkout.
-          if (leavesFolder) {
-            yield* fileSystem.makeDirectory(worktreePath);
-            yield* fileSystem.writeFileString(path.join(worktreePath, "unsaved.txt"), "keep");
-          }
           calls.push("cleanup");
         }),
       );
@@ -355,24 +325,10 @@ it.effect.each([
       if (order === "rollback-first") assert.isFalse(cleanupEntered);
       yield* Deferred.succeed(release, undefined);
       if (cleanup !== undefined) yield* Fiber.join(cleanup);
-      if (unmanaged || shared) {
+      if (unmanaged) {
         const error = yield* Fiber.join(rollback).pipe(Effect.flip);
         assert.equal(error._tag, "CheckpointRollbackExecutionError");
         assert.deepEqual(calls, ["cleanup"]);
-        if (shared) {
-          assert.equal(error.reason, "shared-workspace");
-          assert.isTrue(yield* fileSystem.exists(path.join(worktreePath, "unsaved.txt")));
-        }
-        return;
-      }
-      if (createFails) {
-        yield* Fiber.join(rollback).pipe(Effect.exit);
-        assert.deepEqual(calls, ["cleanup", "prune", "create"]);
-        assert.equal(
-          yield* fileSystem.readFileString(path.join(worktreePath, "unsaved.txt")),
-          "keep",
-        );
-        assert.deepEqual(yield* fileSystem.readDirectory(path.dirname(worktreePath)), ["feature"]);
         return;
       }
       yield* Fiber.join(rollback);
@@ -380,16 +336,12 @@ it.effect.each([
       const rollbackCalls = restoreFiles
         ? ["session", "files", "projection"]
         : ["session", "projection"];
-      const recreates = !leavesFolder || restoreFiles;
       assert.deepEqual(
         calls,
         order === "cleanup-first"
-          ? ["cleanup", ...(recreates ? ["prune", "create"] : []), ...rollbackCalls]
+          ? ["cleanup", "prune", "create", ...rollbackCalls]
           : [...rollbackCalls, "cleanup"],
       );
-      if (!recreates) {
-        assert.isTrue(yield* fileSystem.exists(path.join(worktreePath, "unsaved.txt")));
-      }
     }).pipe(Effect.provide(testLayer));
   }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
 );

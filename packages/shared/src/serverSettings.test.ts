@@ -58,7 +58,7 @@ describe("fallbackTextGenerationModelSelection", () => {
       applyServerSettingsPatch(settings, { fallbackModelSelection: null }).fallbackModelSelection,
     ).toBeNull();
   });
-  it("falls back to a configured non-default instance", () => {
+  it("ignores a configured non-default instance at machine scope, matching no fallback", () => {
     const configured = ProviderInstanceId.make("codex_work");
     const providerInstances = {
       [configured]: { driver: ProviderDriverKind.make("codex"), config: {} },
@@ -66,6 +66,19 @@ describe("fallbackTextGenerationModelSelection", () => {
     const fallback = fallbackTextGenerationModelSelection(
       providerInstances,
       (instanceId) => instanceId === configured,
+    );
+    expect(fallback).toBeNull();
+  });
+
+  it("considers a configured non-default instance only when asked to", () => {
+    const configured = ProviderInstanceId.make("codex_work");
+    const providerInstances = {
+      [configured]: { driver: ProviderDriverKind.make("codex"), config: {} },
+    };
+    const fallback = fallbackTextGenerationModelSelection(
+      providerInstances,
+      (instanceId) => instanceId === configured,
+      { includeConfiguredInstances: true },
     );
     expect(fallback?.instanceId).toBe(configured);
   });

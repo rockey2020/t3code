@@ -1,7 +1,6 @@
 import { translate, type Locale } from "../../i18n/locale";
 
 export const settingsPanelsMessages = {
-  "Screen reader": "屏幕阅读器",
   "Application update checks and automatic updates are disabled in this build.":
     "此版本已禁用应用更新检查和自动更新。",
   "Could not download update": "无法下载更新",

@@ -65,7 +65,7 @@
     "i18n:upstream": "node scripts/i18n-upstream.mjs"
   },
   "devDependencies": {
-    "@coderabbitai/config": "1.2.0",
+    "@coderabbitai/config": "1.2.2",
     "@effect/tsgo": "0.67.1",
     "@shadcn/lint": "0.1.5",
     "@types/node": "catalog:",

@@ -76,6 +76,7 @@ function setup() {
   useDiffPanelStore.setState({
     byThreadKey: {},
     branchBaseRefByThreadKey: {},
+    keepSelectionOnOpenThreadKey: null,
   });
   useRightPanelStore.setState({ byThreadKey: {}, userActionRevisionByThreadKey: {} });
 }
@@ -156,4 +157,6 @@ it("opens an available commit in the closed Diff pane without the pane resetting
       [scopedThreadKey(threadRef)]: { kind: "commit", sha, baseRef: null },
     }),
   );
+  // ChatView resets a pane opened without an explicit request to Changes unless this is set.
+  expect(useDiffPanelStore.getState().consumeKeepSelectionOnOpen(threadRef)).toBe(true);
 });

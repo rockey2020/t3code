@@ -1,6 +1,5 @@
 import { translateNow } from "~/i18n/useTranslation";
 import { globalUiMessages } from "~/components/globalUi.messages";
-import { resolveEventKeys } from "@t3tools/shared/keybindingMatching";
 import { isMacPlatform } from "../../lib/utils";
 import { SELECTION_MULTI_CLICK_INTERVAL_MS } from "../../lib/selectionActions";
 import { collectWrappedTerminalLinkLine, extractTerminalLinks } from "../../terminal-links";
@@ -316,14 +315,14 @@ export function terminalLinkAtPositionWithRange(
 }
 
 export function isTerminalCopyShortcut(
-  event: Pick<KeyboardEvent, "altKey" | "code" | "ctrlKey" | "key" | "metaKey" | "shiftKey">,
+  event: Pick<KeyboardEvent, "ctrlKey" | "key" | "metaKey" | "shiftKey">,
   platform = navigator.platform,
 ) {
-  const keys = resolveEventKeys(event);
-  if (keys.has("insert") && !isMacPlatform(platform)) {
+  const key = event.key.toLowerCase();
+  if (key === "insert" && !isMacPlatform(platform)) {
     return event.ctrlKey && !event.shiftKey && !event.metaKey;
   }
-  if (!keys.has("c")) return false;
+  if (key !== "c") return false;
   return isMacPlatform(platform) ? event.metaKey : event.ctrlKey;
 }
 
@@ -358,14 +357,14 @@ export function applyTerminalCopyEvent(
 }
 
 function isTerminalPasteShortcut(
-  event: Pick<KeyboardEvent, "altKey" | "code" | "ctrlKey" | "key" | "metaKey" | "shiftKey">,
+  event: Pick<KeyboardEvent, "ctrlKey" | "key" | "metaKey" | "shiftKey">,
   platform = navigator.platform,
 ) {
-  const keys = resolveEventKeys(event);
-  if (keys.has("insert") && !isMacPlatform(platform)) {
+  const key = event.key.toLowerCase();
+  if (key === "insert" && !isMacPlatform(platform)) {
     return event.shiftKey && !event.ctrlKey && !event.metaKey;
   }
-  if (!keys.has("v")) return false;
+  if (key !== "v") return false;
   return isMacPlatform(platform) ? event.metaKey : event.ctrlKey && event.shiftKey;
 }
 
@@ -1122,7 +1121,7 @@ export class GhosttyTerminalSurface {
     const mac = isMacPlatform(navigator.platform);
     const primaryModifier = mac ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey;
     const selectAllShortcut =
-      resolveEventKeys(event).has("a") &&
+      event.key.toLowerCase() === "a" &&
       primaryModifier &&
       !event.altKey &&
       (mac ? !event.shiftKey : event.shiftKey);
@@ -1396,9 +1395,7 @@ export class GhosttyTerminalSurface {
     }
     if (event.button === 1 && isMiddleClickPastePlatform()) {
       // Keep pointerdown uncancelled so compatibility mousedown activates the split pane.
-      if (window.desktopBridge?.getPrimaryPasteEnabled?.() !== false) {
-        this.pasteTerminalSelection();
-      }
+      this.pasteTerminalSelection();
       return;
     }
     if (event.button !== 0) return;

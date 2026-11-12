@@ -27,7 +27,6 @@ import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 import { HttpClient, HttpClientError, HttpClientRequest, HttpClientResponse } from "effect/http";
 import * as HostProcess from "@t3tools/shared/HostProcess";
-import { truncate } from "@t3tools/shared/String";
 import type { NodeRuntimeUnavailableError } from "@t3tools/shared/nodeRuntime";
 
 import * as SecretResolver from "@t3tools/secret-provider-core/server/SecretResolver";
@@ -62,34 +61,13 @@ const decodeCatalog = Schema.decodeUnknownEffect(Catalog);
 const decodeSessionRecord = Schema.decodeUnknownEffect(
   Schema.fromJsonString(Schema.Struct({ leaseId: Schema.String })),
 );
-const CliFailure = Schema.Struct({
-  error: Schema.Struct({
-    message: Schema.String,
-    hint: Schema.optional(Schema.String),
-    logPath: Schema.optional(Schema.String),
-    // An open bag; `line` holds the daemon's raw response when agent-device could not parse it.
-    details: Schema.optional(Schema.Unknown),
-  }),
-});
-const responseLine = (details: unknown) =>
-  typeof details === "object" &&
-  details !== null &&
-  "line" in details &&
-  typeof details.line === "string"
-    ? details.line
-    : undefined;
-const decodeCliFailure = Schema.decodeUnknownOption(Schema.fromJsonString(CliFailure));
-const describeCliFailure = ({ error }: typeof CliFailure.Type) => {
-  const line = responseLine(error.details);
-  return [
-    error.message,
-    error.hint,
-    line ? `The daemon answered: ${truncate(line, 300)}` : undefined,
-    error.logPath ? `Log: ${error.logPath}` : undefined,
-  ]
-    .filter((part) => part !== undefined)
-    .join(" ");
-};
+const decodeCliFailure = Schema.decodeUnknownOption(
+  Schema.fromJsonString(
+    Schema.Struct({
+      error: Schema.Struct({ message: Schema.String, hint: Schema.optional(Schema.String) }),
+    }),
+  ),
+);
 
 interface Lease {
   readonly leaseId: string;
@@ -317,7 +295,7 @@ export const make = Effect.fn("SimlockDeviceHost.make")(function* (
       return yield* unavailable(
         Option.match(failure, {
           onNone: () => `agent-device ${args[0]} failed (exit code ${result.code ?? "none"}).`,
-          onSome: describeCliFailure,
+          onSome: ({ error }) => (error.hint ? `${error.message} ${error.hint}` : error.message),
         }),
       );
     }
@@ -462,13 +440,11 @@ export const make = Effect.fn("SimlockDeviceHost.make")(function* (
   ) {
     const target = parseCatalogId(device.id);
     if (!target) {
-      const reason = "This Simlock device is no longer leased. Open it again from the list.";
       return yield* new DeviceBootError({
         hostId,
         deviceId: device.id,
         reason: "launch_failed",
-        diagnostics: reason,
-        cause: new Error(reason),
+        cause: new Error("This Simlock device is no longer leased. Open it again from the list."),
       });
     }
     const suffix = (yield* Random.nextIntBetween(0, 0xffffff)).toString(16).padStart(6, "0");
@@ -535,7 +511,6 @@ export const make = Effect.fn("SimlockDeviceHost.make")(function* (
               hostId,
               deviceId: device.id,
               reason: "launch_failed",
-              diagnostics: truncate(error.reason, 1_997),
               cause: new Error(error.reason),
             })
           : error,

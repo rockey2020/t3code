@@ -187,7 +187,9 @@ export function PullRequestReviewForm({
         }}
       />
       <div className="mt-2 flex flex-wrap items-center justify-end gap-2">
-        <TextFieldSpeechControls speech={speech} disabled={pending} />
+        <div className="mr-auto flex min-w-0 flex-wrap items-center gap-1">
+          <TextFieldSpeechControls speech={speech} disabled={pending} />
+        </div>
         {offered.length > 1 ? (
           <Select
             value={selectedVerdict?.value ?? null}

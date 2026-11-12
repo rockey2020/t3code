@@ -13,10 +13,8 @@ export interface FileBreadcrumbChild extends ProjectEntry {
 
 export function fileBreadcrumbs(projectName: string, relativePath: string): FileBreadcrumb[] {
   const hostPath = isHostPath(relativePath);
-  const windowsPath = isWindowsAbsolutePath(relativePath);
-  const separator = windowsPath ? "\\" : "/";
-  // `\` is a legal filename character outside Windows paths.
-  const parts = relativePath.split(windowsPath ? /[\\/]/ : "/").filter(Boolean);
+  const separator = isWindowsAbsolutePath(relativePath) ? "\\" : "/";
+  const parts = relativePath.split(/[\\/]/).filter(Boolean);
   const root = relativePath.startsWith("\\\\") ? "\\\\" : relativePath.startsWith("/") ? "/" : "";
   return [
     ...(hostPath ? [] : [{ label: projectName, path: "", kind: "project" as const }]),

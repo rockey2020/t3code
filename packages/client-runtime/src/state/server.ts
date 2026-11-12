@@ -25,7 +25,7 @@ import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
-import { AsyncResult, Atom, AtomRegistry } from "effect/reactivity";
+import { AsyncResult, Atom } from "effect/reactivity";
 
 import {
   createAtomCommandScheduler,
@@ -43,13 +43,10 @@ import { safeErrorLogAttributes } from "../errors/safeLog.ts";
 import * as Persistence from "../platform/persistence.ts";
 import { runCachePersistence } from "./cachePersistence.ts";
 import {
-  currentSession,
   isRpcClientError,
   request,
   requestGuarded,
-  requestInSession,
   runStream,
-  runStreamInSession,
   subscribe,
   subscribeDynamicWithSession,
   type EnvironmentRpcInput,
@@ -137,8 +134,6 @@ export class ServerUpdateTerminalError extends Schema.TaggedError<ServerUpdateTe
 // Covers the service launcher's 30-minute trial deadline (PREPARED_TIMEOUT_MS)
 // and a final restart of the previous version when the trial rolls back.
 const SERVER_UPDATE_RESUME_TIMEOUT = Duration.minutes(32);
-// A live host replays its ready on subscribe within a round trip; past this, update without a baseline.
-const SERVER_UPDATE_ACCEPTING_READY_TIMEOUT = Duration.seconds(5);
 
 export function matchesServerUpdateReadyEvent(
   result: ServerSelfUpdateResult,
@@ -149,20 +144,13 @@ export function matchesServerUpdateReadyEvent(
     : event.payload.updateOutcome?.id === result.updateId;
 }
 
-/**
- * `acceptedAt` is the `ready.at` of the process that accepted the update. A launcher host
- * that comes back as any other process ends the wait, so validation can reject a missing
- * or foreign outcome instead of timing out.
- */
 export function matchesServerUpdateResumeEvent(
   result: ServerSelfUpdateResult,
   event: ServerLifecycleStreamReadyEvent,
-  acceptedAt?: string,
 ): boolean {
   return (
     (result.method === "desktop-app" && result.desktopUpdateToken !== undefined) ||
-    matchesServerUpdateReadyEvent(result, event) ||
-    (result.updateId !== undefined && acceptedAt !== undefined && event.payload.at !== acceptedAt)
+    matchesServerUpdateReadyEvent(result, event)
   );
 }
 
@@ -171,10 +159,10 @@ export function validateServerUpdateReadyEvent(
   event: ServerLifecycleStreamReadyEvent,
 ): Effect.Effect<void, ServerUpdateTerminalError> {
   if (result.updateId === undefined) return Effect.void;
-  const reported = event.payload.updateOutcome;
-  const outcome = reported?.id === result.updateId ? reported : undefined;
+  const outcome = event.payload.updateOutcome;
   if (
-    outcome?.status === "committed" &&
+    outcome?.id === result.updateId &&
+    outcome.status === "committed" &&
     outcome.targetVersion === result.targetVersion &&
     event.payload.environment.serverVersion === result.targetVersion
   ) {
@@ -378,45 +366,6 @@ export interface ServerConfigSubscriptionOptions {
   readonly usageLimitSources?: boolean;
   readonly usageLimitsCommand?: boolean;
   readonly providerCatalogsOnDemand?: boolean;
-  readonly providerCatalogDigests?: boolean;
-  readonly providerStatusDeltas?: boolean;
-}
-
-type ServerProviderEntry = ServerConfig["providers"][number];
-
-/** Machine slash commands and skills a cwd snapshot reply carried, with the digest they belong to. */
-export interface FetchedMachineCatalog {
-  readonly instanceId: ProviderInstanceId;
-  readonly digest: string;
-  readonly slashCommands: ServerProviderEntry["slashCommands"];
-  readonly skills: ServerProviderEntry["skills"];
-}
-
-function withFetchedMachineCatalogs(
-  projection: ServerConfigProjection,
-  catalogs: ReadonlyArray<FetchedMachineCatalog>,
-): ServerConfigProjection {
-  let changed = false;
-  const providers = projection.config.providers.map((provider) => {
-    const catalog = catalogs.find((entry) => entry.instanceId === provider.instanceId);
-    // Only the lists of the live catalog apply. A reply for an older one is dropped, and a
-    // reply that lands before the config names its digest applies when the config does.
-    if (
-      catalog === undefined ||
-      catalog.digest !== provider.catalogDigest ||
-      provider.loadedCatalogDigest === catalog.digest
-    ) {
-      return provider;
-    }
-    changed = true;
-    return {
-      ...provider,
-      slashCommands: catalog.slashCommands,
-      skills: catalog.skills,
-      loadedCatalogDigest: catalog.digest,
-    };
-  });
-  return changed ? { ...projection, config: { ...projection.config, providers } } : projection;
 }
 
 // Configs are JSON-shaped. Missing and undefined object fields persist identically.
@@ -455,11 +404,7 @@ function sameCacheValue(previous: unknown, next: unknown): boolean {
 }
 
 export const makeEnvironmentServerConfigState = Effect.fn("EnvironmentServerConfigState.make")(
-  function* (
-    subscription: ServerConfigSubscriptionOptions,
-    // Merged into the state, so the cache keeps the lists for the next launch and for offline.
-    machineCatalogs: Stream.Stream<ReadonlyArray<FetchedMachineCatalog>> = Stream.empty,
-  ) {
+  function* (subscription: ServerConfigSubscriptionOptions) {
     const supervisor = yield* EnvironmentSupervisor.EnvironmentSupervisor;
     const cache = yield* Persistence.EnvironmentCacheStore;
     const environmentId = supervisor.target.environmentId;
@@ -538,44 +483,16 @@ export const makeEnvironmentServerConfigState = Effect.fn("EnvironmentServerConf
 
     yield* runCachePersistence(persistence, persistPending).pipe(Effect.forkScoped);
 
-    type Update = (
-      current: Option.Option<ServerConfigProjection>,
-    ) => Option.Option<ServerConfigProjection>;
-    // Written and read inside the one update loop below.
-    let fetchedCatalogs: ReadonlyArray<FetchedMachineCatalog> = [];
-    const configUpdates = subscribe(WS_METHODS.subscribeServerConfig, {
+    yield* subscribe(WS_METHODS.subscribeServerConfig, {
       ...(subscription.environmentThemes === true ? { environmentThemes: true } : {}),
       ...(subscription.usageLimitSources === true ? { usageLimitSources: true } : {}),
       ...(subscription.usageLimitsCommand === true ? { usageLimitsCommand: true } : {}),
       ...(subscription.providerCatalogsOnDemand === true ? { providerCatalogsOnDemand: true } : {}),
-      ...(subscription.providerCatalogDigests === true ? { providerCatalogDigests: true } : {}),
-      ...(subscription.providerStatusDeltas === true ? { providerStatusDeltas: true } : {}),
     }).pipe(
-      Stream.map((event): Update => (current) => {
-        const next = applyServerConfigProjection(current, event);
-        return fetchedCatalogs.length === 0
-          ? next
-          : Option.map(next, (projection) =>
-              withFetchedMachineCatalogs(projection, fetchedCatalogs),
-            );
-      }),
-    );
-    const catalogUpdates = machineCatalogs.pipe(
-      Stream.map((catalogs): Update => (current) => {
-        fetchedCatalogs = catalogs;
-        return Option.map(current, (projection) =>
-          withFetchedMachineCatalogs(projection, catalogs),
-        );
-      }),
-    );
-
-    // One loop for both sources, so a fetched catalog never overwrites a newer config event.
-    yield* Stream.merge(configUpdates, catalogUpdates).pipe(
-      Stream.runForEach((update) =>
+      Stream.runForEach((event) =>
         Effect.gen(function* () {
-          const current = yield* SubscriptionRef.get(state);
-          const next = update(current);
-          if (Option.isNone(next) || next.value === Option.getOrUndefined(current)) {
+          const next = applyServerConfigProjection(yield* SubscriptionRef.get(state), event);
+          if (Option.isNone(next)) {
             return;
           }
           yield* Ref.set(pendingPersistence, Option.some(next.value.config));
@@ -593,12 +510,11 @@ export const makeEnvironmentServerConfigState = Effect.fn("EnvironmentServerConf
 function serverConfigStateChanges(
   environmentId: EnvironmentId,
   subscription: ServerConfigSubscriptionOptions,
-  machineCatalogs: Stream.Stream<ReadonlyArray<FetchedMachineCatalog>>,
 ) {
   return followStreamInEnvironment(
     environmentId,
     Stream.unwrap(
-      makeEnvironmentServerConfigState(subscription, machineCatalogs).pipe(
+      makeEnvironmentServerConfigState(subscription).pipe(
         Effect.map((state) =>
           SubscriptionRef.changes(state).pipe(
             Stream.filterMap((projection) =>
@@ -743,6 +659,8 @@ export function resolveServerConfigValue(
   return initialConfig ?? projection?.config ?? null;
 }
 
+type ServerProviderEntry = ServerConfig["providers"][number];
+
 /**
  * The provider-wide fields a workspace snapshot builds on. A live session, a sign-out, or a
  * /usage-limits change shows up here, so a snapshot fetched before it no longer applies.
@@ -750,11 +668,8 @@ export function resolveServerConfigValue(
 const snapshotBasis = (provider: ServerProviderEntry | undefined) =>
   provider && {
     enabled: provider.enabled,
-    models: provider.models,
-    // The digest stands for the lists, which load with a snapshot and must not unseat it.
-    ...(provider.catalogDigest === undefined
-      ? { slashCommands: provider.slashCommands, skills: provider.skills }
-      : { catalogDigest: provider.catalogDigest }),
+    slashCommands: provider.slashCommands,
+    skills: provider.skills,
   };
 
 interface FetchedWorkspaceSnapshot {
@@ -843,10 +758,6 @@ export function createServerEnvironmentAtoms<R, E>(
     readonly usageLimitSources?: boolean;
     readonly usageLimitsCommand?: boolean;
     readonly providerCatalogsOnDemand?: boolean;
-    readonly providerCatalogDigests?: boolean;
-    readonly providerStatusDeltas?: boolean;
-    /** Machine refresh replies carry no providers; the config stream already delivers them. */
-    readonly omitRefreshedProviders?: boolean;
   },
 ) {
   const configScheduler = createAtomCommandScheduler();
@@ -855,30 +766,15 @@ export function createServerEnvironmentAtoms<R, E>(
     mode: "serial" as const,
     key: ({ environmentId }: { readonly environmentId: string }) => environmentId,
   };
-  const fetchedMachineCatalogsAtom = Atom.family((environmentId: EnvironmentId) =>
-    Atom.make<ReadonlyArray<FetchedMachineCatalog>>([]).pipe(
-      Atom.keepAlive,
-      Atom.withLabel(`environment-data:server:fetched-machine-catalogs:${environmentId}`),
-    ),
-  );
   const configProjectionFamily = Atom.family((environmentId: EnvironmentId) =>
     runtime
-      .atom((get) =>
-        serverConfigStateChanges(
-          environmentId,
-          {
-            ...(options.environmentThemes === true ? { environmentThemes: true } : {}),
-            ...(options.usageLimitSources === true ? { usageLimitSources: true } : {}),
-            ...(options.usageLimitsCommand === true ? { usageLimitsCommand: true } : {}),
-            ...(options.providerCatalogsOnDemand === true
-              ? { providerCatalogsOnDemand: true }
-              : {}),
-            ...(options.providerCatalogDigests === true ? { providerCatalogDigests: true } : {}),
-            ...(options.providerStatusDeltas === true ? { providerStatusDeltas: true } : {}),
-          },
-          // Scoped to the stream, which restarts with every new session.
-          AtomRegistry.toStream(get.registry, fetchedMachineCatalogsAtom(environmentId)),
-        ),
+      .atom(
+        serverConfigStateChanges(environmentId, {
+          ...(options.environmentThemes === true ? { environmentThemes: true } : {}),
+          ...(options.usageLimitSources === true ? { usageLimitSources: true } : {}),
+          ...(options.usageLimitsCommand === true ? { usageLimitsCommand: true } : {}),
+          ...(options.providerCatalogsOnDemand === true ? { providerCatalogsOnDemand: true } : {}),
+        }),
       )
       .pipe(
         Atom.setIdleTTL(5 * 60_000),
@@ -963,17 +859,6 @@ export function createServerEnvironmentAtoms<R, E>(
         const desktopCommitStarting = yield* Deferred.make<void>();
         const desktopReconnectObserverArmed = yield* Deferred.make<void>();
         const desktopReconnected = yield* Deferred.make<void>();
-        let accepting: { readonly session: RpcSession; readonly at: string } | undefined;
-        let acceptedAt: string | undefined;
-        // The baseline only describes the accepting process if the request rides its session,
-        // so the session read here is the one the request is sent on.
-        const acceptingSession = currentSession().pipe(
-          Effect.tap((session) =>
-            Effect.sync(() => {
-              acceptedAt = accepting?.session === session ? accepting.at : undefined;
-            }),
-          ),
-        );
         yield* Deferred.await(desktopCommitStarting).pipe(
           Effect.andThen(
             environmentRegistry.stateChanges(target.environmentId).pipe(
@@ -1000,28 +885,6 @@ export function createServerEnvironmentAtoms<R, E>(
               fromVersion,
               targetVersion,
             });
-            // Only launcher updates carry an updateId. Read before the request so a ready from
-            // after it can never pose as the accepting process.
-            if (currentConfig?.environment.capabilities.serverSelfUpdate === "boot-service") {
-              accepting = yield* environmentRegistry
-                .followStream(
-                  target.environmentId,
-                  subscribeDynamicWithSession(WS_METHODS.subscribeServerLifecycle, () =>
-                    Effect.succeed({}),
-                  ),
-                )
-                .pipe(
-                  Stream.filter(
-                    (entry): entry is readonly [RpcSession, ServerLifecycleStreamReadyEvent] =>
-                      entry[1].type === "ready",
-                  ),
-                  Stream.map(([session, ready]) => ({ session, at: ready.payload.at })),
-                  Stream.runHead,
-                  Effect.timeoutOption(SERVER_UPDATE_ACCEPTING_READY_TIMEOUT),
-                  Effect.map((head) => Option.getOrUndefined(Option.flatten(head))),
-                  Effect.orElseSucceed(() => undefined),
-                );
-            }
 
             const supportsProgress =
               currentConfig?.environment.capabilities.serverSelfUpdateProgress === true;
@@ -1034,17 +897,7 @@ export function createServerEnvironmentAtoms<R, E>(
                   const streamExit = yield* environmentRegistry
                     .runStream(
                       target.environmentId,
-                      Stream.unwrap(
-                        acceptingSession.pipe(
-                          Effect.map((session) =>
-                            runStreamInSession(
-                              session,
-                              WS_METHODS.serverUpdateServerWithProgress,
-                              target.input,
-                            ),
-                          ),
-                        ),
-                      ),
+                      runStream(WS_METHODS.serverUpdateServerWithProgress, target.input),
                     )
                     .pipe(
                       Stream.runForEach((event) =>
@@ -1084,14 +937,7 @@ export function createServerEnvironmentAtoms<R, E>(
               : yield* Effect.gen(function* () {
                   const selfUpdateMethod = currentConfig?.environment.capabilities.serverSelfUpdate;
                   const exit = yield* environmentRegistry
-                    .run(
-                      target.environmentId,
-                      acceptingSession.pipe(
-                        Effect.flatMap((session) =>
-                          requestInSession(session, WS_METHODS.serverUpdateServer, target.input),
-                        ),
-                      ),
-                    )
+                    .run(target.environmentId, request(WS_METHODS.serverUpdateServer, target.input))
                     .pipe(Effect.exit);
                   if (Exit.isSuccess(exit)) {
                     return exit.value;
@@ -1168,7 +1014,7 @@ export function createServerEnvironmentAtoms<R, E>(
           .pipe(
             Stream.filter(
               (event): event is ServerLifecycleStreamReadyEvent =>
-                event.type === "ready" && matchesServerUpdateResumeEvent(result, event, acceptedAt),
+                event.type === "ready" && matchesServerUpdateResumeEvent(result, event),
             ),
             Stream.runHead,
             Effect.timeoutOption(SERVER_UPDATE_RESUME_TIMEOUT),
@@ -1480,9 +1326,6 @@ export function createServerEnvironmentAtoms<R, E>(
     processResourceHistory: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:server:process-resource-history",
       tag: WS_METHODS.serverGetProcessResourceHistory,
-      staleTimeMs: 5_000,
-      refreshIntervalMs: 5_000,
-      idleTtlMs: 0,
     }),
     scheduledTaskWebhookDeliveries: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:server:scheduled-task:webhook-deliveries",
@@ -1567,44 +1410,17 @@ export function createServerEnvironmentAtoms<R, E>(
     refreshProviders: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:server:refresh-providers",
       tag: WS_METHODS.serverRefreshProviders,
-      execute: (input, registry, environmentId) => {
-        const { instanceId, cwd } = input;
-        const provider =
-          instanceId === undefined || cwd === undefined
-            ? undefined
-            : registry
-                .get(configValueAtom(environmentId))
-                ?.providers.find((candidate) => candidate.instanceId === instanceId);
-        return requestGuarded(WS_METHODS.serverRefreshProviders, {
+      execute: (input) =>
+        requestGuarded(WS_METHODS.serverRefreshProviders, {
           ...input,
           workspaceSnapshotsOnDemand: true,
           ...(options.usageLimitsCommand === true ? { usageLimitsCommand: true } : {}),
           ...(options.providerCatalogsOnDemand === true ? { providerCatalogsOnDemand: true } : {}),
-          ...(options.omitRefreshedProviders === true ? { omitProviders: true } : {}),
-          // The held lists are stale or missing, so the cwd snapshot brings the current ones.
-          ...(provider?.catalogDigest !== undefined &&
-          provider.loadedCatalogDigest !== provider.catalogDigest
-            ? { machineCatalog: true }
-            : {}),
-        });
-      },
+        }),
       onSuccess: ({ environmentId, input }, registry, result) =>
         Effect.sync(() => {
           const { instanceId, cwd } = input;
           if (instanceId === undefined || cwd === undefined) return;
-          const refreshed = result.providers.find((provider) => provider.instanceId === instanceId);
-          if (refreshed?.catalogDigest !== undefined) {
-            const catalog = {
-              instanceId,
-              digest: refreshed.catalogDigest,
-              slashCommands: refreshed.slashCommands,
-              skills: refreshed.skills,
-            };
-            registry.update(fetchedMachineCatalogsAtom(environmentId), (current) => [
-              ...current.filter((entry) => entry.instanceId !== instanceId),
-              catalog,
-            ]);
-          }
           registry.update(fetchedWorkspaceSnapshotsAtom(environmentId), (current) =>
             recordFetchedWorkspaceSnapshot(
               current,
@@ -1632,6 +1448,8 @@ export function createServerEnvironmentAtoms<R, E>(
     updateProvider: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:server:update-provider",
       tag: WS_METHODS.serverUpdateProvider,
+      scheduler: configScheduler,
+      concurrency: configConcurrency,
     }),
     updateServer,
     upsertKeybinding: createEnvironmentRpcCommand(runtime, {

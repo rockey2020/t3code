@@ -227,14 +227,9 @@ export class ServerBrowserContexts {
   async scratchPage() {
     if (this.closing) throw new Error("The preview browser is closed.");
     const context = await this.sharedContext();
-    try {
-      const page = await context.newPage();
-      page.once("close", () => void context.close().catch(constVoid));
-      return page;
-    } catch (cause) {
-      await context.close().catch(constVoid);
-      throw cause;
-    }
+    const page = await context.newPage();
+    page.once("close", () => void context.close().catch(constVoid));
+    return page;
   }
 
   async connectDesktopPage(endpoint: string) {

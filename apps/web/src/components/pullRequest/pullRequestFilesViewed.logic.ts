@@ -58,15 +58,8 @@ export function revertFileViewedOverlay(
   return next.size === overlay.size ? overlay : next;
 }
 
-export interface FileViewedPress {
-  readonly viewed: boolean;
-  readonly revision: string | undefined;
-}
-
 export function toFileViewedBatch(
-  presses: ReadonlyMap<string, FileViewedPress>,
-): ReadonlyArray<{ readonly path: string; readonly viewed: boolean; readonly revision?: string }> {
-  return [...presses].map(([path, { viewed, revision }]) =>
-    revision === undefined ? { path, viewed } : { path, viewed, revision },
-  );
+  overlay: FileViewedOverlay,
+): ReadonlyArray<{ readonly path: string; readonly viewed: boolean }> {
+  return [...overlay].map(([path, viewed]) => ({ path, viewed }));
 }

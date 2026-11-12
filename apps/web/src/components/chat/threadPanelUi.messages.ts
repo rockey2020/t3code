@@ -1,14 +1,4 @@
 export const threadPanelUiMessages = {
-  "Resolve the conflicts in this thread": "在此会话中解决冲突",
-  "Fix the failing checks in this thread": "在此会话中修复失败的检查",
-  "Added to the composer": "已添加到输入框",
-  "The task is in the composer. Read it over, then send.":
-    "任务已放入输入框。请先检查内容，再发送。",
-  "Try replying after the connection or pending input is resolved.":
-    "请在连接恢复或待处理的输入完成后重试回复。",
-  "No SSH route to {environment}": "没有通往 {environment} 的 SSH 连接路径",
-  "Open from a computer to edit on {environment}": "请在电脑上打开，以在 {environment} 中编辑",
-
   "No project": "无项目",
   "Thread title cannot be empty": "会话标题不能为空",
   "Failed to rename thread": "重命名会话失败",

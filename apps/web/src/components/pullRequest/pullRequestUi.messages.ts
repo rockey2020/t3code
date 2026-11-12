@@ -3,9 +3,6 @@ import { capitalizeTerm } from "@t3tools/client-runtime/source-control-clients";
 import type { Locale } from "~/i18n/locale";
 
 export const pullRequestUiMessages = {
-  "Resolved conversation": "已解决的讨论",
-  "{count} resolved conversations": "{count} 条已解决的讨论",
-
   "Context, no code": "背景说明，无代码",
   "1 file": "1 个文件",
   "opened@@timestamp": "创建于",
@@ -580,8 +577,7 @@ export const pullRequestUiMessages = {
   "The question is in the composer. Read it over, then send.": "问题已在输入框中。请检查后发送。",
   "The {kind} is in the composer. Type your question, then send.":
     "{kind} 已在输入框中。输入你的问题后发送。",
-  "The task is in the composer. Read it over, then send.":
-    "任务已放入输入框。请先检查内容，再发送。",
+  "The task is in the composer. Read it over, then send.": "任务已在输入框中。请检查后发送。",
   "Could not open a thread": "无法打开会话",
   "Try again from the project, or open a thread first.": "请从项目中重试，或先打开一个会话。",
   "Asked in a thread": "已在会话中提问",

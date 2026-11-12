@@ -10,8 +10,12 @@ import {
 import { filesUiMessages } from "../filesUi.messages";
 import { OfficePages, type PaintPage } from "./OfficePages";
 import { createWorkerClient } from "./worker-rpc";
-import type { SlideMethods, SlideSummary } from "./slide-protocol";
-import { rasterize } from "./vector-pictures";
+import {
+  maxImageSide,
+  type SlideMethods,
+  type SlideSummary,
+  type VectorRequest,
+} from "./slide-protocol";
 
 type Opened = { slides: readonly SlideSummary[]; paint: PaintPage };
 export default function Presentation(props: {
@@ -84,11 +88,7 @@ export default function Presentation(props: {
             translateNow(filesUiMessages, "Preview limited to presentations with 1 to 500 slides."),
           );
         setOpened({ slides, paint });
-        onDetails(
-          translateNow(filesUiMessages, slides.length === 1 ? "{count} slide" : "{count} slides", {
-            count: slides.length,
-          }),
-        );
+        onDetails(translateNow(filesUiMessages, "{count} slides", { count: slides.length }));
       })
       .catch(fail);
     return () => {
@@ -167,4 +167,29 @@ export default function Presentation(props: {
       />
     </div>
   );
+}
+async function rasterize(request: VectorRequest) {
+  const url = URL.createObjectURL(request.blob);
+  const image = new Image();
+  image.src = url;
+  try {
+    await image.decode();
+    const shrink = Math.min(1, maxImageSide / Math.max(image.naturalWidth, image.naturalHeight));
+    const size = request.size ?? {
+      width: Math.max(1, Math.round(image.naturalWidth * shrink)),
+      height: Math.max(1, Math.round(image.naturalHeight * shrink)),
+    };
+    return {
+      asset: request.asset,
+      bitmap: await createImageBitmap(image, {
+        resizeWidth: size.width,
+        resizeHeight: size.height,
+        resizeQuality: "high",
+      }),
+    };
+  } catch {
+    return { asset: request.asset, bitmap: undefined };
+  } finally {
+    URL.revokeObjectURL(url);
+  }
 }

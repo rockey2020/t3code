@@ -2,7 +2,7 @@ import type { ProviderInstanceEnvironment } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Effect from "effect/Effect";
 
-import { expandHomeVariable } from "./pathExpansion.ts";
+import { expandHomePath } from "./pathExpansion.ts";
 
 export const mergeProviderInstanceEnvironment = Effect.fn(function* (
   environment: ProviderInstanceEnvironment | undefined,
@@ -27,7 +27,10 @@ export const mergeProviderInstanceEnvironment = Effect.fn(function* (
         if (inherited.toUpperCase() === name) delete next[inherited];
       }
     }
-    next[name] = expandHomeVariable(name, variable.value, home);
+    next[name] =
+      name === "CODEX_HOME" || name === "CLAUDE_CONFIG_DIR"
+        ? expandHomePath(variable.value, home)
+        : variable.value;
   }
   return next;
 });

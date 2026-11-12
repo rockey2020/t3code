@@ -10,9 +10,7 @@ import {
 } from "@betteroffice/xlsx";
 import type { CellRange } from "@betteroffice/xlsx/headless";
 import { anchorRange, attempt, lastCell, parseRange, parseSpans } from "./sheet-cells";
-import type { WorkbookView } from "../officePreviewProtocol";
-import { chartFonts, drawFrame, paintFrame, withoutGridlines } from "./sheet-frame";
-import { sheetFonts } from "./sheet-fonts";
+import { drawFrame, paintFrame } from "./sheet-frame";
 import { frozenSize } from "./sheet-paint";
 import type { SheetLayout, SheetMethods, SheetTab } from "./sheet-protocol";
 import { serveWorker, Transfer } from "./worker-rpc";
@@ -28,17 +26,12 @@ type Opened = {
   readonly ends: Map<string, { readonly x: number; readonly y: number } | undefined>;
   /** The one canvas every frame paints on and hands over as a bitmap. */
   readonly surface: OffscreenCanvas;
-  /** The sheets whose view hides gridlines, which the engine draws on every sheet. */
-  readonly hiddenGridlines: ReadonlySet<number>;
-  readonly themeFonts: WorkbookView["themeFonts"];
 };
 
 /** The workbook this worker opened, once it has. */
 type State = { opened: Opened | undefined };
 
 const state: State = { opened: undefined };
-
-const loadFonts = sheetFonts();
 
 serveWorker<SheetMethods>({
   open: async (input) => {
@@ -49,14 +42,7 @@ serveWorker<SheetMethods>({
     const workbook = openWorkbook(new Uint8Array(input.bytes));
     const info = workbook.sheetInfo();
 
-    state.opened = {
-      workbook,
-      info,
-      ends: new Map(),
-      surface: new OffscreenCanvas(1, 1),
-      hiddenGridlines: new Set(input.view.hiddenGridlines),
-      themeFonts: input.view.themeFonts,
-    };
+    state.opened = { workbook, info, ends: new Map(), surface: new OffscreenCanvas(1, 1) };
 
     const tabs = visibleTabs(workbook, info);
     // A workbook saved on a hidden sheet opens on the first visible one, as Excel does.
@@ -78,20 +64,13 @@ serveWorker<SheetMethods>({
 
     throw new Error(`Sheet ${input.sheet} could not open`);
   },
-  frame: async (input) => {
+  frame: (input) => {
     const opened = active(input.sheet);
     const frozen = { rows: opened.info.frozenRows, cols: opened.info.frozenCols };
     const viewport = { x: input.x, y: input.y, width: input.width, height: input.height };
-    const frame = drawFrame(opened.workbook, viewport, frozen, input.wider);
+    const drawn = drawFrame(opened.workbook, viewport, frozen, input.wider);
 
-    if (!frame) return undefined;
-
-    const drawn = chartFonts(
-      opened.hiddenGridlines.has(input.sheet) ? withoutGridlines(frame) : frame,
-      opened.themeFonts,
-    );
-
-    await loadFonts(drawn.tiles.map((tile) => tile.list));
+    if (!drawn) return undefined;
 
     const surface = opened.surface;
     const width = Math.ceil(input.offset.x + drawn.viewport.width * input.ratio);

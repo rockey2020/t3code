@@ -14,18 +14,6 @@ export function nativeChineseCandidates(files) {
     .map(({ path }) => path);
 }
 
-const REVIEWED_NATIVE_CATALOGS = new Set([
-  "apps/web/src/i18n/translations/zh.json",
-  "apps/mobile/src/i18n/translations/zh.json",
-]);
-
-export function localizationStatus(candidates) {
-  if (candidates.length === 0) return "no-native-chinese-detected";
-  return candidates.every((path) => REVIEWED_NATIVE_CATALOGS.has(path))
-    ? "native-chinese-integrated"
-    : "review-upstream-localization";
-}
-
 export function inspectUpstream(ref) {
   const git = (...args) =>
     NodeChildProcess.execFileSync("git", args, { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
@@ -39,18 +27,14 @@ export function inspectUpstream(ref) {
   const candidates = nativeChineseCandidates(
     paths.map((path) => ({ path, content: git("show", `${commit}:${path}`) })),
   );
-  const status = localizationStatus(candidates);
   return {
     ref,
     commit,
     candidates,
-    status,
-    message:
-      status === "native-chinese-integrated"
-        ? "Reviewed upstream GT Chinese catalogs detected. Preserve native runtime and catalogs; maintain remaining community coverage through its shared locale."
-        : status === "review-upstream-localization"
-          ? "New localization architecture detected. Review it before importing community patches."
-          : "No native Simplified Chinese catalog detected. Review upstream localization changes.",
+    status: candidates.length ? "review-upstream-localization" : "no-native-chinese-detected",
+    message: candidates.length
+      ? "Upstream may now implement Simplified Chinese. Stop automatic localization import and adapt this fork to upstream's runtime/catalogs before continuing."
+      : "No native Simplified Chinese catalog was detected. This is a heuristic; review upstream release notes and localization changes too.",
   };
 }
 
@@ -58,7 +42,7 @@ if (process.argv[1] && import.meta.url === NodeURL.pathToFileURL(process.argv[1]
   try {
     const result = inspectUpstream(process.argv[2] ?? "upstream/main");
     console.log(JSON.stringify(result, null, 2));
-    if (result.status === "review-upstream-localization") process.exitCode = 2;
+    if (result.candidates.length) process.exitCode = 2;
   } catch (error) {
     console.error(`Cannot inspect upstream localization: ${error.message}`);
     process.exitCode = 1;

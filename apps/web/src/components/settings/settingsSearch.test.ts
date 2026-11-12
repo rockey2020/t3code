@@ -1,4 +1,3 @@
-import { translateSettingsLabel } from "./settingsMessages";
 import { describe, expect, it, vi } from "vite-plus/test";
 import {
   EnvironmentId,
@@ -60,33 +59,23 @@ const ITEMS: ReadonlyArray<SettingsSearchItem> = [
 
 describe("searchSettings", () => {
   it("finds translated titles and sections without changing result identities", () => {
-    const result = searchSettings("自动换行", ITEMS, (label) =>
-      translateSettingsLabel(label, "zh-CN"),
-    );
+    const result = searchSettings("自动换行", ITEMS, "zh-CN");
     expect(result).toEqual([ITEMS[0]]);
     expect(result[0]).toBe(ITEMS[0]);
-    expect(
-      searchSettings("共享与访问", ITEMS, (label) => translateSettingsLabel(label, "zh-CN")).map(
-        (item) => item.id,
-      ),
-    ).toEqual(["network-access"]);
-    expect(
-      searchSettings("network", ITEMS, (label) => translateSettingsLabel(label, "zh-CN")).map(
-        (item) => item.id,
-      ),
-    ).toEqual(["network-access"]);
-    expect(
-      searchSettings("remote pairing", ITEMS, (label) =>
-        translateSettingsLabel(label, "zh-CN"),
-      ).map((item) => item.id),
-    ).toEqual(["network-access"]);
+    expect(searchSettings("共享与访问", ITEMS, "zh-CN").map((item) => item.id)).toEqual([
+      "network-access",
+    ]);
+    expect(searchSettings("network", ITEMS, "zh-CN").map((item) => item.id)).toEqual([
+      "network-access",
+    ]);
+    expect(searchSettings("remote pairing", ITEMS, "zh-CN").map((item) => item.id)).toEqual([
+      "network-access",
+    ]);
   });
 
   it("finds the language selector by either language", () => {
     for (const query of ["界面语言", "Interface language", "简体中文"]) {
-      expect(
-        searchSettings(query, undefined, (label) => translateSettingsLabel(label, "zh-CN"))[0],
-      ).toMatchObject({
+      expect(searchSettings(query, undefined, "zh-CN")[0]).toMatchObject({
         id: "interface-language",
         to: "/settings/general",
       });
@@ -99,8 +88,6 @@ describe("searchSettings", () => {
     expect(searchSettings("sharing", ITEMS).map((item) => item.id)).toEqual(["network-access"]);
     expect(searchSettings("claude", ITEMS).map((item) => item.id)).toEqual(["providers"]);
     expect(searchSettings("long lines", ITEMS).map((item) => item.id)).toEqual(["word-wrap"]);
-    const spanish = (message: string) => (message === "Word wrap" ? "Ajuste de línea" : message);
-    expect(searchSettings("ajuste", ITEMS, spanish).map((item) => item.id)).toEqual(["word-wrap"]);
     for (const query of ["fallback", "fallback agent", "fallback model"]) {
       expect(searchSettings(query)[0]).toMatchObject({
         id: "fallback-model",

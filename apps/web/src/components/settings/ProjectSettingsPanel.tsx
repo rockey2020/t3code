@@ -57,7 +57,6 @@ import {
   hasDefaultProjectIcon,
   projectGroupTitleNeedsUpdate,
   SCRATCH_PROJECT_TITLE,
-  scopeProjectSettingsGroup,
 } from "./ProjectSettingsPanel.logic";
 import { useSettingsProjectGroups } from "./useSettingsProjectGroups";
 import { readUnloadedThreadCount } from "../../state/olderSettledShelf";
@@ -244,7 +243,12 @@ export function ProjectSettingsPanel({
         {t("This checkout is no longer available in the selected project and environment.")}
       </p>
     );
-  const scopedGroup = scopeProjectSettingsGroup(selected, members);
+  const scopedGroup = {
+    ...selected,
+    memberProjects: members,
+    environmentId: members[0]!.environmentId,
+    id: members[0]!.id,
+  };
   return (
     <ProjectDetail
       key={`${selected.projectKey}:${environmentId ?? "all"}:${checkoutKey ?? "all"}`}
@@ -277,7 +281,7 @@ function ProjectDetail({
   const canEditGroup = group.memberProjects.every((member) =>
     editableIds.has(member.environmentId),
   );
-  const filePickerProject =
+  const representative =
     group.memberProjects.find(
       (member) => environmentById.get(member.environmentId)?.serverConfig != null,
     ) ?? group.memberProjects[0]!;
@@ -287,8 +291,8 @@ function ProjectDetail({
   });
   const projectNameEditedRef = useRef(false);
 
-  const faviconPath = group.faviconPath ?? null;
-  const projectIcon = group.projectIcon ?? null;
+  const faviconPath = representative.faviconPath ?? null;
+  const projectIcon = representative.projectIcon ?? null;
   const pickProjectFavicon =
     typeof window !== "undefined" &&
     group.memberProjects.every(
@@ -599,7 +603,7 @@ function ProjectDetail({
             }
             control={
               <div className="flex items-center gap-2">
-                <ProjectFavicon project={group} className="size-6" />
+                <ProjectFavicon project={representative} className="size-6" />
                 <Button
                   size="sm"
                   variant="outline"
@@ -714,12 +718,12 @@ function ProjectDetail({
       </SettingsPageContainer>
 
       <ProjectFaviconPickerDialog
-        key={`${filePickerProject.environmentId}:${filePickerProject.workspaceRoot}:${faviconPickerOpen}`}
-        cwd={filePickerProject.workspaceRoot}
-        environmentId={filePickerProject.environmentId}
+        key={`${representative.environmentId}:${representative.workspaceRoot}:${faviconPickerOpen}`}
+        cwd={representative.workspaceRoot}
+        environmentId={representative.environmentId}
         onOpenChange={setFaviconPickerOpen}
         {...(pickProjectFavicon
-          ? { onPickExternal: () => pickProjectFavicon(filePickerProject.workspaceRoot) }
+          ? { onPickExternal: () => pickProjectFavicon(representative.workspaceRoot) }
           : {})}
         onSelect={(path) => void setProjectIcon({ faviconPath: path, projectIcon: null })}
         open={faviconPickerOpen && canEditGroup}
@@ -729,7 +733,7 @@ function ProjectDetail({
         <Suspense fallback={null}>
           <ProjectIconPickerDialog
             current={projectIcon}
-            projectName={group.title}
+            projectName={representative.title}
             open
             onOpenChange={setIconPickerOpen}
             onSelect={(icon) => void setProjectIcon({ faviconPath: null, projectIcon: icon })}

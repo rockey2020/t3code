@@ -100,8 +100,7 @@ export function sourceControlRefFromInput(input: {
 }
 
 export function repositoryPathFromRemoteUrl(url: string | null): string | null {
-  const remote = url?.trim() ?? "";
-  const trimmed = /^(?:ssh|https?|git):\/\//iu.test(remote) ? remote.split(/[?#]/u, 1)[0]! : remote;
+  const trimmed = url?.trim() ?? "";
   if (trimmed.length === 0) {
     return null;
   }

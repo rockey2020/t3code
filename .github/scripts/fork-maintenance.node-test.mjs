@@ -11,6 +11,7 @@ import {
   auditedOverlay,
   normalizedOverlayBase,
   forkOverlayDiff,
+  releaseDelta,
   commitPreparedSource,
   gitOutput,
 } from "./fork-maintenance.mjs";
@@ -40,6 +41,59 @@ NodeTest.test("binary diffs retain blank context lines so release patches remain
     execute(["apply", "--3way", "-"], { input: `${patch}\n` });
     NodeAssert.equal(NodeFS.readFileSync(file, "utf8"), "new value\n\n");
     NodeAssert.equal(gitOutput(["rev-parse", "HEAD"], "abc\n"), "abc");
+  } finally {
+    NodeFS.rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+NodeTest.test("release diffs and fingerprints ignore core.abbrev", () => {
+  const directory = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "fork-fingerprint-"));
+  const run = (args, options = {}) =>
+    gitOutput(
+      args,
+      NodeChildProcess.execFileSync("git", args, {
+        cwd: directory,
+        encoding: "utf8",
+        stdio: ["pipe", "pipe", "pipe"],
+        ...options,
+      }),
+    );
+  try {
+    run(["init", "--initial-branch=main"]);
+    run(["config", "user.name", "Test"]);
+    run(["config", "user.email", "test@example.invalid"]);
+    run(["config", "commit.gpgSign", "false"]);
+    NodeFS.mkdirSync(NodePath.join(directory, ".github/workflows"), { recursive: true });
+    const source = NodePath.join(directory, "source.txt");
+    const workflow = NodePath.join(directory, ".github/workflows/build.yml");
+    const binary = NodePath.join(directory, "asset.bin");
+    NodeFS.writeFileSync(source, "old value\n\n");
+    NodeFS.writeFileSync(workflow, "name: old workflow\n");
+    NodeFS.writeFileSync(binary, Buffer.from([0, 1, 2, 3]));
+    run(["add", "-A"]);
+    run(["commit", "-m", "baseline"]);
+    const baseline = run(["rev-parse", "HEAD"]);
+    NodeFS.writeFileSync(source, "new value\n\n");
+    NodeFS.writeFileSync(workflow, "name: new workflow\n");
+    NodeFS.writeFileSync(binary, Buffer.from([0, 4, 5, 6]));
+    run(["add", "-A"]);
+    run(["commit", "-m", "fork changes"]);
+    const fork = run(["rev-parse", "HEAD"]);
+    run(["config", "core.abbrev", "7"]);
+    const short = releaseDelta(run, baseline, fork);
+    run(["config", "core.abbrev", "12"]);
+    const long = releaseDelta(run, baseline, fork);
+    NodeAssert.deepEqual(short, long);
+    NodeAssert.equal(forkOverlayDiff(run, baseline, fork), short.patch);
+    NodeAssert.match(short.patch, /GIT binary patch/);
+    NodeAssert.match(short.patch, / \n$/);
+    NodeAssert.doesNotMatch(short.patch, /build.yml/);
+    NodeAssert.match(short.workflowDelta, /build.yml/);
+    run(["checkout", "--detach", baseline]);
+    run(["apply", "--3way", "-"], { input: short.patch });
+    NodeAssert.equal(NodeFS.readFileSync(source, "utf8"), "new value\n\n");
+    NodeAssert.deepEqual(NodeFS.readFileSync(binary), Buffer.from([0, 4, 5, 6]));
+    NodeAssert.equal(NodeFS.readFileSync(workflow, "utf8"), "name: old workflow\n");
   } finally {
     NodeFS.rmSync(directory, { recursive: true, force: true });
   }
@@ -147,7 +201,7 @@ NodeTest.test(
       write("app.txt", "newer main feature must not leak into the release\n");
       NodeFS.rmSync(NodePath.join(worktree, ".github/workflows/upstream-only.yml"));
       write(".github/workflows/shared.yml", "name: Fork shared workflow\n");
-      write(".github/workflows/fork-build.yml", "name: Approved fork build\n");
+      write(".github/workflows/fork-desktop.yml", "name: Approved fork build\n");
       git("add", "-A");
       git("commit", "-m", "fork main with approved workflows");
       const fork = git("rev-parse", "HEAD");

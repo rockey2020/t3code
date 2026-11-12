@@ -143,7 +143,7 @@ NodeTest.test("missed schedules recover only after seven hours without maintenan
 NodeTest.test("does not cancel another workflow or branch", async () => {
   const f = fixture(
     [
-      { ...run(1), path: ".github/workflows/fork-build.yml" },
+      { ...run(1), path: ".github/workflows/fork-desktop.yml" },
       { ...run(2), head_branch: "feature" },
     ],
     { latest: run(3, "completed", 1) },

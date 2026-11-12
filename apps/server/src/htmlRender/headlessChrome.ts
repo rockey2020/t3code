@@ -418,17 +418,10 @@ const launchBrowser = Effect.fnUntraced(function* (input: {
     );
   });
 
-  // Chrome's default context can stall Fetch interception during navigation.
-  const { browserContextId } = yield* send(
-    "Target.createBrowserContext",
-    {},
-    Schema.Struct({ browserContextId: Schema.String }),
-  );
-
   const openPage = Effect.fnUntraced(function* (width: number, appearance: ThemeAppearance) {
     const { targetId } = yield* send(
       "Target.createTarget",
-      { url: "about:blank", browserContextId },
+      { url: "about:blank" },
       Schema.Struct({ targetId: Schema.String }),
     );
     const { sessionId } = yield* send(

@@ -119,11 +119,11 @@ export interface McpAppHost {
   readonly dispose: () => void;
 }
 
-function stringifyJson(value: unknown): string | undefined {
+function jsonBytes(value: unknown): number {
   try {
-    return JSON.stringify(value);
+    return encoder.encode(JSON.stringify(value) ?? "").byteLength;
   } catch {
-    return undefined;
+    return Number.POSITIVE_INFINITY;
   }
 }
 
@@ -395,14 +395,10 @@ export function makeMcpAppHost(options: McpAppHostOptions): McpAppHost {
   const hostHandle: McpAppHost = {
     receive: (data) => {
       if (disposed || !Predicate.isObject(data) || data.jsonrpc !== "2.0") return;
-      const requestId = isId(data.id) && typeof data.method === "string" ? data.id : undefined;
-      const json = stringifyJson(data);
-      if (json === undefined) {
-        if (requestId !== undefined) fail(requestId, -32602, "Params must be JSON.");
-        return;
-      }
-      if (encoder.encode(json).byteLength > MAX_MESSAGE_BYTES) {
-        if (requestId !== undefined) fail(requestId, -32600, "Message too large.");
+      if (jsonBytes(data) > MAX_MESSAGE_BYTES) {
+        if (isId(data.id) && typeof data.method === "string") {
+          fail(data.id, -32600, "Message too large.");
+        }
         return;
       }
       const method = data.method;
@@ -410,9 +406,7 @@ export function makeMcpAppHost(options: McpAppHostOptions): McpAppHost {
         if (isId(data.id) && ("result" in data || "error" in data)) handleResponse(data.id);
         return;
       }
-      // postMessage keeps undefined, which the RPC's JSON codec rejects; pass on the JSON form.
-      const { params: jsonParams }: { params?: unknown } = JSON.parse(json);
-      const params = Predicate.isObject(jsonParams) ? jsonParams : {};
+      const params = Predicate.isObject(data.params) ? data.params : {};
       if (isId(data.id)) handleRequest(data.id, method, params);
       else handleNotification(method, params);
     },

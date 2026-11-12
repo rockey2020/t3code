@@ -19,8 +19,8 @@ export function assertClaudeBackgroundTaskAfterRootOutput(
   assertBaseProjection({
     result,
     transcript,
-    runCount: 2,
-    runStatuses: ["completed", "completed"],
+    runCount: 1,
+    runStatuses: ["completed"],
   });
 
   const projection = projectionFor(result, transcript.scenario);
@@ -28,9 +28,7 @@ export function assertClaudeBackgroundTaskAfterRootOutput(
   assertUserMessagesInclude(projection, [CLAUDE_BACKGROUND_TASK_AFTER_ROOT_PROMPT]);
 
   const rootRun = projection.runs[0];
-  const wakeRun = projection.runs[1];
   assert.isDefined(rootRun);
-  assert.isDefined(wakeRun);
   const pendingRosterIndex = result.domainEvents.findIndex(
     (event) =>
       event.type === "provider-thread.updated" &&
@@ -49,14 +47,12 @@ export function assertClaudeBackgroundTaskAfterRootOutput(
       event.payload.kind === "root_turn" &&
       event.payload.status === "waiting",
   );
-  const clearedRosterIndex = result.domainEvents.findIndex(
+  const idleRosterIndex = result.domainEvents.findIndex(
     (event, index) =>
       index > waitingRunIndex &&
       event.type === "provider-thread.updated" &&
-      event.payload.pendingBackgroundTasks?.length === 0,
-  );
-  const wakeRunIndex = result.domainEvents.findIndex(
-    (event) => event.type === "run.created" && event.payload.id === wakeRun.id,
+      event.payload.status === "idle" &&
+      (event.payload.pendingBackgroundTasks?.length ?? 0) === 0,
   );
 
   assert.isAtLeast(pendingRosterIndex, 0, "replay must project the live background task roster");
@@ -70,11 +66,10 @@ export function assertClaudeBackgroundTaskAfterRootOutput(
     pendingRosterIndex,
     "checkpoint-waiting root node must retain the background roster",
   );
-  assert.isAbove(wakeRunIndex, waitingRunIndex, "the wake must follow the root turn");
   assert.isAbove(
-    clearedRosterIndex,
-    wakeRunIndex,
-    "the background task must remain pending until its wake run consumes the completion",
+    idleRosterIndex,
+    waitingRunIndex,
+    "late background completion must clear the roster and return the provider thread to idle",
   );
   assert.equal(rootRun.status, "completed");
   const rootNode = projection.nodes.find(
@@ -91,7 +86,7 @@ export function assertClaudeBackgroundTaskAfterRootOutput(
   const assistantTexts = projection.turnItems.flatMap((item) =>
     item.type === "assistant_message" ? [item.text] : [],
   );
-  assert.deepEqual(assistantTexts, ["L2_STARTED", "L2_WAKE: L2_BG_DONE"]);
+  assert.deepEqual(assistantTexts, ["L2_STARTED"]);
 
   const shell = result.shellSnapshot.threads.find((thread) => thread.id === projection.thread.id);
   assert.isDefined(shell);

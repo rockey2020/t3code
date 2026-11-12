@@ -365,7 +365,7 @@ function UncachedShikiCodeBlock({
       highlightedCodeCache.set(
         cacheKey,
         highlightedHtml,
-        estimateHighlightedSize(highlightedHtml, cacheKey),
+        estimateHighlightedSize(highlightedHtml, code),
       );
     }
     return result;

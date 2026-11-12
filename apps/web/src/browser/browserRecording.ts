@@ -147,7 +147,7 @@ interface ActiveRecording {
   releaseSurfaceActivity: (() => void) | null;
   stream: MediaStream | null;
   recorder: MediaRecorder | null;
-  compositor: Awaited<ReturnType<typeof createRecordingCompositor>> | null;
+  compositor: Awaited<ReturnType<typeof createRecordingCompositor>>;
   lifecycle: BrowserRecordingLifecycle;
 }
 
@@ -644,7 +644,7 @@ export async function startBrowserRecording(
             if (event.tabId === tabId) listener(event.input);
           }),
       );
-      recorder = createMediaRecorder(recording.compositor.stream);
+      recorder = createMediaRecorder(recording.compositor?.stream ?? stream);
       recording.recorder = recorder;
       recorder.addEventListener("dataavailable", (event) => {
         if (event.data.size > 0) chunks.push(event.data);

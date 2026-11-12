@@ -164,8 +164,6 @@ export function UsagePriceOverrides({
   ];
   const stagedDrafts = drafts.filter((draft) => !isEmptyUsagePriceDraft(draft));
   const errors = usagePriceTableErrors(selected, stagedDrafts);
-  // New rows still block Save, but show a price error only once a price or mapping is typed.
-  const awaitingPrice = new Set<string>();
   for (const draft of stagedDrafts) {
     if (!draft.isNew) continue;
     if (draft.model.trim() === "") errors.set(draft.id, t("Enter a model ID."));
@@ -175,11 +173,6 @@ export function UsagePriceOverrides({
         drafts.some((other) => other.id !== draft.id && other.model.trim() === draft.model.trim()))
     )
       errors.set(draft.id, t("This model already has a row. Edit its prices there."));
-    else if (
-      (draft.alias ?? "").trim() === "" &&
-      Object.values(draft.values).every((value) => value.trim() === "")
-    )
-      awaitingPrice.add(draft.id);
   }
   const failedDestinations =
     attempt?.destinations.filter(
@@ -412,7 +405,6 @@ export function UsagePriceOverrides({
                       rows.map((row) => {
                         const aliasCell = usageAliasCell(selected, row.model);
                         const alias = (row.alias ?? aliasCell.value).trim();
-                        const error = awaitingPrice.has(row.id) ? undefined : errors.get(row.id);
                         return (
                           <TableRow key={row.id} data-row-id={row.id}>
                             <TableCell className="whitespace-normal">
@@ -428,7 +420,7 @@ export function UsagePriceOverrides({
                                   }}
                                   aria-label={t("New model ID")}
                                   aria-invalid={
-                                    (row.model.trim() !== "" && error !== undefined) || undefined
+                                    (row.model.trim() !== "" && errors.has(row.id)) || undefined
                                   }
                                   list="usage-price-models"
                                   placeholder={t("Model ID")}
@@ -449,11 +441,11 @@ export function UsagePriceOverrides({
                                   {row.model}
                                 </span>
                               )}
-                              {error !== undefined &&
+                              {errors.has(row.id) &&
                               (row.model.trim() !== "" ||
                                 Object.values(row.values).some((value) => value !== "")) ? (
                                 <p role="alert" className="mt-1 text-xs text-destructive">
-                                  {error}
+                                  {errors.get(row.id)}
                                 </p>
                               ) : null}
                             </TableCell>

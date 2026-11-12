@@ -85,16 +85,7 @@ export const make = Effect.gen(function* () {
     driver: VcsDriver.VcsDriver["Service"],
     cwd: string,
   ) {
-    // Status, review and source control show a repository Git cannot read as none at all.
-    // Checkpoints need the failure, so CheckpointStore asks the driver directly.
-    const repository = yield* driver.detectRepository(cwd).pipe(
-      Effect.catchTags({
-        VcsProcessExitError: (error) =>
-          error.operation === GitVcsDriver.WORK_TREE_PROBE_OPERATION
-            ? Effect.succeed(null)
-            : Effect.fail(error),
-      }),
-    );
+    const repository = yield* driver.detectRepository(cwd);
     if (!repository) {
       return null;
     }

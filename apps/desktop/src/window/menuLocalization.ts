@@ -1,36 +1,6 @@
 import type * as Electron from "electron";
 
 const labels: Readonly<Record<string, string>> = {
-  "Trust and Remember": "信任并记住",
-  "{host} has an untrusted certificate": "{host} 的证书不受信任",
-  "No trusted authority issued this certificate.": "此证书并非由受信任的机构签发。",
-  "This certificate is not for this address.": "此证书不适用于此地址。",
-  "This certificate has expired or is not valid yet.": "此证书已过期或尚未生效。",
-  "Issued to: {name}": "颁发给：{name}",
-  "Issued by: {name}": "颁发机构：{name}",
-  "Valid: {start} – {end}": "有效期：{start} – {end}",
-  "Fingerprint: {fingerprint}": "指纹：{fingerprint}",
-  "Trust it only if you know this certificate belongs to the site. Clearing this browser profile's cookies forgets it.":
-    "仅在确认此证书属于该网站时才信任它。清除此浏览器配置的 Cookie 将撤销此信任。",
-  "Could not trust the certificate for {host}": "无法信任 {host} 的证书",
-  "T3 Code could not save this approval, so the page stays blocked. Check that the disk is not full and its data folder is writable, then try again.":
-    "T3 Code 无法保存此批准，因此页面仍被阻止。请确认磁盘未满且数据文件夹可写，然后重试。",
-  "The desktop shortcut service restarted. Reconnecting…": "桌面快捷键服务已重启。正在重新连接…",
-
-  "This T3 home is unavailable": "此 T3 主目录不可用",
-  "Another T3 Code server, such as the background service, is using this data directory, or an older background service is set up for it. Stop that server or try `t3 update`. If the older launcher cannot update, run `t3 service uninstall` and optionally reinstall with `t3 service install` from a current CLI. Use `npx t3@latest` if `t3` is missing or outdated, and pass `--base-dir` with the service's T3 home to each command. Then reopen T3 Code. You can also set a separate T3CODE_HOME and pair with the running server.":
-    "另一个 T3 Code 服务器（例如后台服务）正在使用此数据目录，或此目录已配置旧版后台服务。请停止该服务器，或尝试 `t3 update`。如果旧版启动器无法更新，请运行 `t3 service uninstall`，并可使用当前 CLI 运行 `t3 service install` 重新安装。如果 `t3` 缺失或过旧，请使用 `npx t3@latest`，并在每条命令中通过 `--base-dir` 指定该服务的 T3 主目录。然后重新打开 T3 Code。你也可以设置单独的 T3CODE_HOME，并与正在运行的服务器配对。",
-  "The T3 Code background service": "T3 Code 后台服务",
-  "Another T3 Code server (for example `t3 serve`, or one started over SSH)":
-    "另一个 T3 Code 服务端（例如 `t3 serve`，或通过 SSH 启动的服务端）",
-  ", version {version}": "，版本 {version}",
-  "Stop it with `t3 service uninstall`, passing `--base-dir` with this T3 home":
-    "请运行 `t3 service uninstall` 停止它，并传入 `--base-dir` 指定此 T3 数据目录",
-  "If a T3 Code app on another machine started it over SSH, that app restarts it: remove or disconnect that SSH environment there, or quit that app. Then stop the server":
-    "如果另一台机器上的 T3 Code 应用通过 SSH 启动了它，该应用会将它重新启动：请在那里移除或断开该 SSH 环境，或退出该应用。然后停止服务端",
-  "{kind} is using this T3 home (PID {pid}, port {port}{version}). {stop}, and reopen T3 Code. You can also set a separate T3CODE_HOME and pair with the running server.":
-    "{kind} 正在使用此 T3 数据目录（PID {pid}，端口 {port}{version}）。{stop}，然后重新打开 T3 Code。你也可以设置独立的 T3CODE_HOME，再与正在运行的服务端配对。",
-
   File: "文件",
   Edit: "编辑",
   View: "查看",

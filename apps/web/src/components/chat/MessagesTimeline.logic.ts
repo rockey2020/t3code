@@ -1,8 +1,12 @@
-import * as DateTime from "effect/DateTime";
 import { worktreeSetupAgentStarted } from "@t3tools/client-runtime/worktree-setup";
 import { resolveUserMessagePresentation } from "@t3tools/client-runtime/user-message";
 import { isLiveSubagentTurnItem } from "@t3tools/client-runtime/state/subagentRuntime";
+import * as DateTime from "effect/DateTime";
 import * as Equal from "effect/Equal";
+import {
+  assistantCitationLabel,
+  collectAssistantCitations,
+} from "@t3tools/shared/assistantCitations";
 import { shallow } from "zustand/vanilla/shallow";
 import { claudeResumeCompactionAge } from "@t3tools/shared/claudeCompaction";
 import {
@@ -739,20 +743,12 @@ interface SupersededAttemptFold {
   readonly hiddenEntryIds: ReadonlySet<string>;
 }
 
-// Only an explicit final phase proves a reply cut short by steering was an answer.
-function retainedAssistantReplyEntryIds(
+// Interrupted streams can be `completed`; only the attempt's last output proves completion.
+function completeSupersededReplyEntryIds(
   timelineEntries: ReadonlyArray<TimelineEntry>,
 ): ReadonlySet<string> {
-  const replyEntryIds = new Set<string>();
   const lastOutputByAttemptId = new Map<RunAttemptId, TimelineEntry>();
   for (const entry of timelineEntries) {
-    if (
-      entry.kind === "message" &&
-      entry.projectedItem?.item.type === "assistant_message" &&
-      entry.projectedItem.item.phase === "final_answer"
-    )
-      replyEntryIds.add(entry.id);
-
     if (
       entry.attempt?.status !== "superseded" ||
       (entry.kind === "message" && entry.message.role === "user") ||
@@ -776,14 +772,14 @@ function retainedAssistantReplyEntryIds(
     if (deferredEnd !== undefined && ordinal !== undefined && deferredEnd > ordinal) continue;
     lastOutputByAttemptId.set(entry.attempt.id, entry);
   }
+  const replyEntryIds = new Set<string>();
   for (const entry of lastOutputByAttemptId.values()) {
-    const item = entry.kind === "message" ? entry.projectedItem?.item : undefined;
     const supersededAt = entry.attempt?.completedAt ?? null;
+    const item = entry.kind === "message" ? entry.projectedItem?.item : undefined;
     if (
       entry.kind === "message" &&
       !entry.message.streaming &&
       item?.type === "assistant_message" &&
-      item.phase === undefined &&
       item.status === "completed" &&
       item.completedAt !== null &&
       supersededAt !== null &&
@@ -799,18 +795,18 @@ function deriveSupersededAttemptFolds(
   timelineEntries: ReadonlyArray<TimelineEntry>,
   unfoldedRunIds: ReadonlySet<RunId>,
   liveSubagentEntryIds: ReadonlySet<string>,
-  retainedReplyEntryIds: ReadonlySet<string>,
+  completeReplyEntryIds: ReadonlySet<string>,
 ): ReadonlyMap<string, SupersededAttemptFold> {
-  const retainedAttemptIds = new Set(
+  const completeAttemptIds = new Set(
     timelineEntries.flatMap((entry) =>
-      entry.attempt !== undefined && retainedReplyEntryIds.has(entry.id) ? [entry.attempt.id] : [],
+      entry.attempt !== undefined && completeReplyEntryIds.has(entry.id) ? [entry.attempt.id] : [],
     ),
   );
   const entriesByAttemptId = new Map<RunAttemptId, TimelineEntry[]>();
   for (const entry of timelineEntries) {
     if (
       entry.attempt?.status !== "superseded" ||
-      retainedAttemptIds.has(entry.attempt.id) ||
+      completeAttemptIds.has(entry.attempt.id) ||
       unfoldedRunIds.has(entry.attempt.runId) ||
       (entry.kind === "message" && entry.message.role === "user") ||
       (entry.kind === "event" && entry.projectedItem.item.type === "handoff") ||
@@ -1026,7 +1022,7 @@ function deriveTurnFolds(input: {
   unfoldedRunIds: ReadonlySet<RunId>;
   runlessWorkActive: boolean;
   liveSubagentEntryIds: ReadonlySet<string>;
-  retainedAssistantReplyEntryIds: ReadonlySet<string>;
+  completeSupersededReplyEntryIds: ReadonlySet<string>;
 }): ReadonlyMap<string, TurnFold> {
   const interruptedRunIds = new Set<RunId>();
   const promptIndexByRunId = new Map<RunId, number>();
@@ -1141,8 +1137,6 @@ function deriveTurnFolds(input: {
     const terminalEntryIndex = group.terminalEntry
       ? group.entries.findIndex((entry) => entry.id === group.terminalEntry?.id)
       : group.entries.length;
-    // Folded dividers lose their place in the turn, so only the latest stays visible.
-    const visibleCompactionId = group.entries.findLast(timelineEntryIsCompaction)?.id;
     for (const [index, entry] of group.entries.entries()) {
       if (entry.id === group.terminalEntry?.id) {
         continue;
@@ -1156,10 +1150,10 @@ function deriveTurnFolds(input: {
         continue;
       }
       if (
-        entry.id === visibleCompactionId ||
+        isCompaction ||
         timelineEntryIsPersistentResourceCard(entry) ||
         input.liveSubagentEntryIds.has(entry.id) ||
-        input.retainedAssistantReplyEntryIds.has(entry.id)
+        input.completeSupersededReplyEntryIds.has(entry.id)
       ) {
         continue;
       }
@@ -1464,7 +1458,6 @@ function timelineRowEntries(
     const answeringFrom = answering ? lastResponseBoundaryIndex(entries) + 1 : entries.length;
     const terminalIds = deriveTerminalAssistantMessageIds(entries);
     const steerAnswerIds = deriveInFlightSteerAnswerIds(entries);
-    const retainedReplyIds = retainedAssistantReplyEntryIds(entries);
     shown = entries.filter((entry, index) => {
       if (entry.kind !== "message") {
         return workShownAsFinalAnswerOnly(entry, input.pendingApprovalRequestIds);
@@ -1474,7 +1467,6 @@ function timelineRowEntries(
         message.role !== "assistant" ||
         message.id === input.revealedMessageId ||
         steerAnswerIds.has(message.id) ||
-        retainedReplyIds.has(entry.id) ||
         (terminalIds.has(message.id) &&
           index < answeringFrom &&
           (answeringRunId === null || message.runId !== answeringRunId))
@@ -1517,7 +1509,7 @@ function deriveTimelineTurnFolds(
     unfoldedRunIds: new Set([...activeVisualResponseRunIds, ...failedRunIds]),
     runlessWorkActive: input.isWorking && input.runlessWorkActive === true,
     liveSubagentEntryIds: liveSubagentCardEntryIds(timelineEntries),
-    retainedAssistantReplyEntryIds: retainedAssistantReplyEntryIds(timelineEntries),
+    completeSupersededReplyEntryIds: completeSupersededReplyEntryIds(timelineEntries),
   });
 }
 
@@ -1535,7 +1527,7 @@ export function deriveMessagesTimelineRows(input: {
   activeTurnStartedAt?: string | null;
   turnDiffSummaries: ReadonlyArray<TurnDiffSummary>;
   supportsConversationRollback: boolean;
-  threadStartCheckpointAvailable?: boolean;
+  threadStartCheckpointReady?: boolean;
   availableRevertTurnCounts?: ReadonlySet<number> | undefined;
   worktreeSetup?: WorktreeSetupSnapshot | null;
   toolCallVisibility?: ToolCallVisibility;
@@ -1566,7 +1558,7 @@ export function deriveMessagesTimelineRows(input: {
     ? deriveRevertTurnCountByUserMessageId({
         timelineEntries: input.timelineEntries,
         checkpoints: input.turnDiffSummaries,
-        threadStartCheckpointAvailable: input.threadStartCheckpointAvailable === true,
+        threadStartCheckpointReady: input.threadStartCheckpointReady === true,
         unsettledRunId,
         availableRevertTurnCounts: input.availableRevertTurnCounts,
       })
@@ -1576,12 +1568,12 @@ export function deriveMessagesTimelineRows(input: {
   const failedRunIds = failedTimelineRunIds(timelineEntries, input.latestRun ?? null);
   const itemizedRunIds = itemizedFailedRunIds(timelineEntries, failedRunIds);
   const liveSubagentEntryIds = liveSubagentCardEntryIds(timelineEntries);
-  const retainedAssistantReplyIds = retainedAssistantReplyEntryIds(timelineEntries);
+  const completeSupersededReplyIds = completeSupersededReplyEntryIds(timelineEntries);
   const supersededFoldsByAnchorEntryId = deriveSupersededAttemptFolds(
     timelineEntries,
     failedRunIds,
     liveSubagentEntryIds,
-    retainedAssistantReplyIds,
+    completeSupersededReplyIds,
   );
   const supersededWorkItemIds = new Set(
     [...supersededFoldsByAnchorEntryId.values()].flatMap((fold) => fold.deferredWorkItemIds),
@@ -1602,7 +1594,7 @@ export function deriveMessagesTimelineRows(input: {
           unfoldedRunIds: new Set([...activeVisualResponseRunIds, ...failedRunIds]),
           runlessWorkActive,
           liveSubagentEntryIds,
-          retainedAssistantReplyEntryIds: retainedAssistantReplyIds,
+          completeSupersededReplyEntryIds: completeSupersededReplyIds,
         });
   const timelineEntryById = new Map(timelineEntries.map((entry) => [entry.id, entry]));
   const collapsedEntryIds = new Set<string>();
@@ -2696,6 +2688,33 @@ function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean
       );
     }
   }
+}
+
+const MAX_COLLAPSED_USER_MESSAGE_LINES = 8;
+const MAX_COLLAPSED_USER_MESSAGE_LENGTH = 600;
+const MARKDOWN_LINK = /!?\[([^\]\n]*)\]\((?:<[^>\n]*>|[^\s)]*)\)/g;
+
+function visibleUserMessageText(text: string): string {
+  const linkLabels = (segment: string) => segment.replace(MARKDOWN_LINK, "$1");
+  let visible = "";
+  let cursor = 0;
+  for (const match of collectAssistantCitations(text)) {
+    visible += linkLabels(text.slice(cursor, match.start)) + assistantCitationLabel(match.citation);
+    cursor = match.end;
+  }
+  return visible + linkLabels(text.slice(cursor));
+}
+
+export function shouldCollapseUserMessage(text: string): boolean {
+  const visible = visibleUserMessageText(text);
+  if (visible.trim().length === 0) {
+    return false;
+  }
+
+  return (
+    visible.length > MAX_COLLAPSED_USER_MESSAGE_LENGTH ||
+    visible.split("\n").length > MAX_COLLAPSED_USER_MESSAGE_LINES
+  );
 }
 
 export function handoffRunsSignature(runs: ReadonlyArray<HandoffTimelineRun>): string {

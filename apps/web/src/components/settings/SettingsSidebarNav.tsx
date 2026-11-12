@@ -1,5 +1,5 @@
-import { useLocale } from "../../i18n/useTranslation";
-import { translateSettingsLabel } from "./settingsMessages";
+import { useLocale, useTranslation } from "../../i18n/useTranslation";
+import { settingsMessages, translateSettingsLabel } from "./settingsMessages";
 import {
   lazy,
   Suspense,
@@ -37,7 +37,6 @@ import {
 } from "lucide-react";
 import { resolveEventKeys } from "@t3tools/shared/keybindings";
 import { useLocation, useNavigate } from "@tanstack/react-router";
-import { T, useGT, useMessages } from "gt-react";
 
 import { cn } from "../../lib/utils";
 import { Button } from "../ui/button";
@@ -61,7 +60,7 @@ import {
   type SettingsSearchItem,
 } from "./settingsSearch";
 import { useAvailableSettingsSearchItems } from "./useAvailableSettingsSearchItems";
-import { handleSettingsSectionKeyDown } from "./settingsSectionNavigation";
+import { useSettingsSectionNavigation } from "./useSettingsSectionNavigation";
 import { workspaceAreaProps } from "../../lib/workspaceFocus";
 
 const SnapShotIcon = createLucideIcon("snap-shot", [
@@ -132,21 +131,25 @@ function SettingsSectionIcon({ to }: { to: SettingsPath }) {
 }
 
 export function SettingsSidebarNav({ pathname }: { pathname: string }) {
-  const gt = useGT();
-  const nativeMessage = useMessages();
   const locale = useLocale();
-  const m = (message: string) => translateSettingsLabel(nativeMessage(message), locale);
-  const navArea = workspaceAreaProps("settings-nav", 0, gt("Settings sections"));
+  const t = useTranslation(settingsMessages);
+  const navArea = workspaceAreaProps("settings-nav", 0, t("Settings sections"));
   const navigate = useNavigate();
   const currentHash = useLocation({ select: (location) => location.hash });
   const activePath = SETTINGS_DETAIL_PAGE_PARENTS[pathname] ?? pathname;
+  const navPaths = SETTINGS_NAV_GROUPS.flatMap((group) => group.paths);
+  const sectionNavigation = useSettingsSectionNavigation(
+    navPaths.find((to) => activePath === to || activePath.startsWith(`${to}/`)) ??
+      navPaths[0] ??
+      "",
+  );
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState("");
   // Below md the nav is an icon rail; searching expands it over the page.
   const [compactSearchOpen, setCompactSearchOpen] = useState(false);
   const [activeResultIndex, setActiveResultIndex] = useState(0);
   const searchableItems = useAvailableSettingsSearchItems();
-  const results = searchSettings(query, searchableItems, m);
+  const results = searchSettings(query, searchableItems, locale);
   const isSearching = query.trim().length > 0;
   const hasResults = results.length > 0;
   const maxResultIndex = Math.max(results.length - 1, 0);
@@ -292,8 +295,8 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
                 onBlur={() => {
                   if (!isSearching) setCompactSearchOpen(false);
                 }}
-                placeholder={gt("Search")}
-                aria-label={gt("Search settings")}
+                placeholder={t("Search")}
+                aria-label={t("Search settings")}
                 role="combobox"
                 aria-autocomplete="list"
                 aria-expanded={isSearching && hasResults}
@@ -311,7 +314,7 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
                   size="icon-micro"
                   variant="ghost-muted"
                   className="shrink-0"
-                  aria-label={gt("Clear settings search")}
+                  aria-label={t("Clear settings search")}
                   onClick={() => {
                     clearSearch();
                     searchInputRef.current?.focus();
@@ -328,14 +331,14 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
                 role="status"
                 className="px-2 py-6 text-center text-xs text-sidebar-muted-foreground"
               >
-                <T>No settings found</T>
+                {t("No settings found")}
               </p>
             ) : null}
             {isSearching ? (
               <SidebarMenu
                 id={hasResults ? "settings-search-results" : undefined}
                 role={hasResults ? "listbox" : undefined}
-                aria-label={hasResults ? gt("Settings search results") : undefined}
+                aria-label={hasResults ? t("Settings search results") : undefined}
               >
                 {results.map((item, index) => (
                   <SidebarMenuItem
@@ -357,10 +360,10 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
                       <SettingsSectionIcon to={item.to} />
                       <span className="min-w-0 flex-1">
                         <span className="block truncate text-sm font-medium text-sidebar-foreground">
-                          {m(item.title)}
+                          {translateSettingsLabel(item.title, locale)}
                         </span>
                         <span className="block truncate text-2xs text-sidebar-muted-foreground/75">
-                          {m(SETTINGS_SECTION_LABELS[item.to])}
+                          {translateSettingsLabel(SETTINGS_SECTION_LABELS[item.to], locale)}
                         </span>
                       </span>
                     </SidebarMenuButton>
@@ -373,7 +376,7 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
                   <SidebarMenu className="md:hidden">
                     <SidebarMenuItem>
                       <SidebarMenuButton
-                        aria-label={gt("Search settings")}
+                        aria-label={t("Search settings")}
                         onClick={() => setCompactSearchOpen(true)}
                       >
                         <SearchIcon />
@@ -381,50 +384,59 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
                     </SidebarMenuItem>
                   </SidebarMenu>
                 )}
-                <div onKeyDown={handleSettingsSectionKeyDown} className="flex flex-col gap-4">
+                <div
+                  {...sectionNavigation.containerProps}
+                  role="tree"
+                  aria-label={t("Settings sections")}
+                  className="flex flex-col gap-4"
+                >
                   {SETTINGS_NAV_GROUPS.map((group, index) => (
                     <div
-                      key={group.heading}
+                      key={group.heading ?? index}
+                      role="group"
+                      aria-label={
+                        group.heading ? translateSettingsLabel(group.heading, locale) : undefined
+                      }
                       className="flex flex-col gap-1 max-md:border-t max-md:border-sidebar-border max-md:pt-4 max-md:first:border-t-0 max-md:first:pt-0"
                     >
-                      <h3
-                        id={`settings-nav-group-${index}`}
-                        className={cn(
-                          "px-2 text-xs font-medium text-sidebar-muted-foreground/80",
-                          group.headingHidden ? "sr-only" : !compactSearchOpen && "max-md:sr-only",
-                        )}
-                      >
-                        {m(group.heading)}
-                      </h3>
-                      {/* The heading stays outside the group it names so NVDA does not read the name twice. */}
-                      <div role="group" aria-labelledby={`settings-nav-group-${index}`}>
-                        <SidebarMenu>
-                          {group.paths.map((to) => {
-                            const Icon = SETTINGS_SECTION_ICONS[to];
-                            const isActive = activePath === to || activePath.startsWith(`${to}/`);
-                            return (
-                              <SidebarMenuItem key={to}>
-                                <SidebarMenuButton
-                                  data-settings-section={to}
-                                  aria-current={isActive ? "page" : undefined}
-                                  isActive={isActive}
-                                  onClick={() => handleSectionClick(to)}
+                      {group.heading ? (
+                        // The group carries this label; a heading is not a valid tree child.
+                        <h3
+                          aria-hidden="true"
+                          className={cn(
+                            "px-2 text-xs font-medium text-sidebar-muted-foreground/80",
+                            !compactSearchOpen && "max-md:hidden",
+                          )}
+                        >
+                          {translateSettingsLabel(group.heading, locale)}
+                        </h3>
+                      ) : null}
+                      <SidebarMenu role="presentation">
+                        {group.paths.map((to) => {
+                          const Icon = SETTINGS_SECTION_ICONS[to];
+                          const isActive = activePath === to || activePath.startsWith(`${to}/`);
+                          return (
+                            <SidebarMenuItem key={to} role="presentation">
+                              <SidebarMenuButton
+                                data-settings-section={to}
+                                role="treeitem"
+                                tabIndex={sectionNavigation.tabIndexFor(to)}
+                                aria-selected={isActive}
+                                aria-current={isActive ? "page" : undefined}
+                                isActive={isActive}
+                                onClick={() => handleSectionClick(to)}
+                              >
+                                <Icon />
+                                <span
+                                  className={cn("truncate", !compactSearchOpen && "max-md:sr-only")}
                                 >
-                                  <Icon />
-                                  <span
-                                    className={cn(
-                                      "truncate",
-                                      !compactSearchOpen && "max-md:sr-only",
-                                    )}
-                                  >
-                                    {m(SETTINGS_SECTION_LABELS[to])}
-                                  </span>
-                                </SidebarMenuButton>
-                              </SidebarMenuItem>
-                            );
-                          })}
-                        </SidebarMenu>
-                      </div>
+                                  {translateSettingsLabel(SETTINGS_SECTION_LABELS[to], locale)}
+                                </span>
+                              </SidebarMenuButton>
+                            </SidebarMenuItem>
+                          );
+                        })}
+                      </SidebarMenu>
                     </div>
                   ))}
                 </div>

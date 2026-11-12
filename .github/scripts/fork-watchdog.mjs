@@ -12,8 +12,7 @@ export async function recoverMaintenance({ api, config, now }) {
     throw new Error("Repository identity changed; watchdog refused to act.");
   const belongs = (run) =>
     run.path === `.github/workflows/${workflow}` && run.head_branch === config.branch;
-  const started = (run) => Date.parse(run.run_started_at ?? run.created_at);
-  const age = (run) => now - started(run);
+  const age = (run) => now - Date.parse(run.run_started_at ?? run.created_at);
   const pending = async () => {
     const runs = [];
     for (const status of ["queued", "in_progress", "waiting", "pending", "requested"]) {
@@ -27,7 +26,7 @@ export async function recoverMaintenance({ api, config, now }) {
   const runs = await pending();
   if (runs.some((run) => run.status !== "queued" || !(age(run) >= queueLimit)))
     return { status: "active", runs: runs.map((run) => run.id) };
-  let candidates = [];
+  const candidates = [];
   for (const run of runs) {
     const current = await api(`${root}/actions/runs/${run.id}`);
     const jobs = await api(`${root}/actions/runs/${run.id}/jobs?per_page=1`);
@@ -42,25 +41,11 @@ export async function recoverMaintenance({ api, config, now }) {
   }
   // Cancellation has no conditional API: never race a runner starting after a read.
   // A manual dispatch shares maintenance's non-cancelling concurrency group.
-  // Reruns retain their original creation time, so scan unfiltered history.
-  const latest = { workflow_runs: [] };
-  const seen = new Set();
-  for (let page = 1; ; page++) {
-    if (page > 10) throw new Error("Actions inventory exceeds safety limit; refusing recovery.");
-    const history = await api(
-      `${root}/actions/workflows/${workflow}/runs?per_page=100&page=${page}`,
-    );
-    if (
-      !Number.isInteger(history.total_count) ||
-      history.total_count < 0 ||
-      history.workflow_runs.some((run) => seen.has(run.id)) ||
-      (!history.workflow_runs.length && seen.size < history.total_count)
-    )
-      throw new Error("Incomplete final Actions inventory; refusing recovery.");
-    for (const run of history.workflow_runs) seen.add(run.id);
-    latest.workflow_runs.push(...history.workflow_runs);
-    if (seen.size >= history.total_count) break;
-  }
+  const latest = await api(
+    `${root}/actions/workflows/${workflow}/runs?branch=${config.branch}&per_page=100&created=>=${encodeURIComponent(new Date(Math.min(now - scheduleLimit, ...runs.map((run) => Date.parse(run.created_at)))).toISOString())}`,
+  );
+  if (latest.total_count > latest.workflow_runs.length)
+    throw new Error("Incomplete final Actions inventory; refusing recovery.");
   if (
     latest.workflow_runs.some(
       (run) =>
@@ -70,29 +55,11 @@ export async function recoverMaintenance({ api, config, now }) {
     )
   )
     return { status: "active" };
-  const current = await pending();
-  if (
-    current.some(
-      (run) => run.status !== "queued" || !(age(run) >= queueLimit) || !candidates.includes(run.id),
-    )
-  )
-    return { status: "active" };
-  // Completed replacements supersede abandoned queues, even when they failed.
-  // Use actual start time so reruns of older workflow records also count.
-  const completed = latest.workflow_runs.filter(
-    (run) => belongs(run) && run.status === "completed",
-  );
-  candidates = candidates.filter((id) => {
-    const queued = runs.find((run) => run.id === id);
-    return !completed.some((run) => started(run) > started(queued));
-  });
   if (!candidates.length) {
     const recent = await api(
       `${root}/actions/workflows/${workflow}/runs?branch=${config.branch}&per_page=1`,
     );
-    const previous = [...recent.workflow_runs, ...latest.workflow_runs, ...runs]
-      .filter(belongs)
-      .sort((left, right) => started(right) - started(left))[0];
+    const previous = recent.workflow_runs[0];
     if (previous && !(age(previous) >= scheduleLimit)) return { status: "healthy" };
   }
   await api(`${root}/actions/workflows/${workflow}/dispatches`, {

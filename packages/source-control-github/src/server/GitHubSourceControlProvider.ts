@@ -308,9 +308,8 @@ export const makeDiscovery = Effect.gen(function* () {
     refineUnknownRemote: ({ context }) => {
       const url = URL.parse(context.provider.baseUrl);
       if (!url?.host) return Effect.succeed(null);
-      const host = gitHubApiHostForRemote(context.remoteUrl) ?? url.host;
       // A timeout or keyring failure propagates: the registry does not keep that answer.
-      return api.credential(host).pipe(
+      return api.credential(url.host).pipe(
         Effect.as(true),
         Effect.catchTags({
           GitHubCliMissingError: () => Effect.succeed(false),
@@ -321,8 +320,8 @@ export const makeDiscovery = Effect.gen(function* () {
           known
             ? ({
                 kind: SourceControlProviderKind.make("github"),
-                name: host === "github.com" ? "GitHub" : "GitHub Self-Hosted",
-                baseUrl: host === url.host ? context.provider.baseUrl : `https://${host}`,
+                name: "GitHub Self-Hosted",
+                baseUrl: context.provider.baseUrl,
               } as const)
             : null,
         ),
@@ -474,18 +473,6 @@ export const make = Effect.gen(function* () {
       timeoutMs: 5_000,
     });
 
-  const readRemotes = (cwd: string) =>
-    Effect.all([
-      gitRead(cwd, ["remote", "-v"]),
-      gitRead(cwd, ["config", "--get-regexp", "^remote\\..*\\.gh-resolved$"]),
-    ]).pipe(
-      Effect.orElseSucceed(() => [null, null] as const),
-      Effect.map(([remotes, resolved]) => ({
-        remotes: remotes?.exitCode === 0 ? remotes.stdout : "",
-        resolved: resolved?.exitCode === 0 ? resolved.stdout : "",
-      })),
-    );
-
   const resolveRepository = Effect.fn("GitHubSourceControlProvider.resolveRepository")(
     function* (input: {
       readonly cwd: string;
@@ -499,8 +486,13 @@ export const make = Effect.gen(function* () {
         const locator = parseGitHubRepositorySelector(envRepository, defaultHost);
         if (locator !== null) return locator;
       }
+      const [remotes, resolved] = yield* Effect.all([
+        gitRead(input.cwd, ["remote", "-v"]),
+        gitRead(input.cwd, ["config", "--get-regexp", "^remote\\..*\\.gh-resolved$"]),
+      ]).pipe(Effect.orElseSucceed(() => [null, null] as const));
       const { host, locator } = resolveGitHubRepository({
-        ...(yield* readRemotes(input.cwd)),
+        remotes: remotes?.exitCode === 0 ? remotes.stdout : "",
+        resolved: resolved?.exitCode === 0 ? resolved.stdout : "",
         hostHint,
         defaultHost,
       });
@@ -895,9 +887,8 @@ export const make = Effect.gen(function* () {
       },
     ),
     // `createChangeRequest` targets what `resolveRepository` picks: GH_REPO when it parses, else
-    // gh's pick among the checkout's remotes, led by the one `gh repo set-default` marked
-    // (`gh-resolved`). An HTTPS remote keeps a non-default port in the context's host, and the
-    // mark is then ignored.
+    // the remote `gh repo set-default` marked (`gh-resolved`). An HTTPS remote keeps a
+    // non-default port in the context's host, and the mark is then ignored.
     createsChangeRequestsIn: Effect.fn("GitHubSourceControlProvider.createsChangeRequestsIn")(
       function* ({ cwd, context, repository }) {
         const host = URL.canParse(context.provider.baseUrl)
@@ -917,8 +908,12 @@ export const make = Effect.gen(function* () {
             `${owner}/${name}`.toLowerCase() === target
           );
         }
+        const mark = yield* git
+          .readConfigValue(cwd, `remote.${context.remoteName}.gh-resolved`)
+          .pipe(Effect.orElseSucceed(() => null));
         const { locator } = resolveGitHubRepository({
-          ...(yield* readRemotes(cwd)),
+          remotes: `${context.remoteName}\t${context.remoteUrl} (fetch)`,
+          resolved: mark === null ? "" : `remote.${context.remoteName}.gh-resolved ${mark}`,
           hostHint: host ?? undefined,
           defaultHost: host ?? "github.com",
         });

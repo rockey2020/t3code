@@ -1,14 +1,9 @@
-import {
-  ProviderDriverKind,
-  settingsSecretLiteral,
-  type ServerProviderModel,
-} from "@t3tools/contracts";
+import { ProviderDriverKind, settingsSecretLiteral } from "@t3tools/contracts";
 import { OpenCodeSettings } from "../settings.ts";
 import * as Digest from "effect/crypto/Digest";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
-import * as Equal from "effect/Equal";
 import * as Option from "effect/Option";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
@@ -22,7 +17,6 @@ import { makeOpenCodeTextGeneration } from "./textGeneration.ts";
 import * as ProviderLatestVersions from "@t3tools/provider-core/server/ProviderLatestVersions";
 import * as ProviderHost from "@t3tools/provider-core/server/ProviderHost";
 import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
-import { AgentScope } from "@t3tools/shared/AgentScope";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { compareSemverVersions } from "@t3tools/shared/semver";
 import * as OpenCodeAdapterV2 from "./adapter.ts";
@@ -32,32 +26,27 @@ import type { ProviderTextGeneration } from "@t3tools/provider-core/server/textG
 import { ProviderDriverError } from "@t3tools/provider-core/server/errors";
 import { openCodeUsageReader, type OpenCodeUsageReaderEnv } from "./usage.ts";
 import { readOpenCodeGoUsageLimits } from "./usageLimits.ts";
-import { loadOpenCode2Catalog, loadOpenCode2DirectoryCatalog } from "./openCode2Catalog.ts";
+import { loadOpenCode2Catalog } from "./openCode2Catalog.ts";
 import {
   checkOpenCodeProviderStatus,
   loadOpenCode2Workspace,
   makeOpenCode2ModelLoader,
   makePendingOpenCodeProvider,
   openCode2CommandsToServerProviderSlashCommands,
-  openCode2ProviderModels,
   openCode2SkillsToServerProviderSkills,
   openCodeSkillsToServerProviderSkills,
   openCodeCommandsToServerProviderSlashCommands,
-  openCodeProviderModels,
-  readSettledOpenCode2Catalog,
 } from "./status.ts";
 import { makeManagedServerProvider } from "@t3tools/provider-core/server/managedProvider";
 import * as OpenCodeRuntime from "./OpenCodeRuntime.ts";
 import {
   makeOpenCodeRuntimeProbe,
   probeOpenCodeRuntime,
-  probeOpenCodeBinary,
   type ProbedOpenCode,
 } from "./versionProbe.ts";
 import * as OpenCodeServerOwner from "./OpenCodeServerOwner.ts";
 import * as OpenCode2Client from "./v2/OpenCode2Client.ts";
 import * as OpenCode2Server from "./v2/OpenCode2Server.ts";
-import { replaceOutdatedService } from "./v2/OpenCode2Service.ts";
 import {
   defaultProviderContinuationIdentity,
   type ProviderDriver,
@@ -83,18 +72,6 @@ const decodeOpenCodeSettings = Schema.decodeSync(OpenCodeSettings);
 
 const DRIVER_KIND = ProviderDriverKind.make("opencode");
 
-// A loopback server runs on this environment, but can outlive its CLI installation.
-// Its reported version may therefore differ from the installed executable after an update.
-export function isLocalOpenCodeServerUrl(serverUrl: string): boolean {
-  const url = URL.parse(serverUrl.trim());
-  if (url?.protocol !== "http:" && url?.protocol !== "https:") return false;
-  return (
-    url.hostname === "localhost" ||
-    url.hostname === "[::1]" ||
-    /^127\.(?:\d{1,3}\.){2}\d{1,3}$/.test(url.hostname)
-  );
-}
-
 function isOpenCodeNativeCommandPath(commandPath: string): boolean {
   const normalized = normalizeCommandPath(commandPath);
   return (
@@ -103,32 +80,15 @@ function isOpenCodeNativeCommandPath(commandPath: string): boolean {
   );
 }
 
-function openCodeNativeHome(commandPath: string): string | null {
-  const slashed = commandPath.replaceAll("\\", "/");
-  const match = /\/\.opencode\/bin\/opencode(?:\.exe)?$/i.exec(slashed);
-  if (!match) return null;
-  return match.index === 0 ? "/" : slashed.slice(0, match.index);
-}
-
 /** Update only within the installed package generation; 2.x converts the shared database in place. */
 export const openCodeUpdateFor = (generation: ProbedOpenCode["generation"]) =>
   makePackageManagedProviderMaintenanceResolver({
     provider: DRIVER_KIND,
     npmPackageName: generation === "v2" ? "@opencode/cli" : "opencode-ai",
     nativeUpdate: {
-      // `isOpenCodeNativeCommandPath` is the curl installer's own binary. Name the
-      // method so OpenCode does not have to infer it from `process.execPath`, which
-      // fails when the binary is launched through a wrapper or shim.
-      args: ["upgrade", "--method", "curl"],
+      args: ["upgrade"],
       isCommandPath: isOpenCodeNativeCommandPath,
       requiresCommandPath: true,
-      // The curl installer writes to `$HOME/.opencode/bin`, so point HOME at the install it replaces.
-      env: (context) => {
-        const home =
-          openCodeNativeHome(context.realCommandPath) ??
-          openCodeNativeHome(context.resolvedCommandPath);
-        return home ? { HOME: home } : {};
-      },
     },
     // mise's `opencode` follows releases into 2.x, so it would upgrade 1.x across that line.
     mise: { tool: "opencode", upgrade: generation === "v2" },
@@ -146,17 +106,6 @@ function byOpenCodeRuntime<A, E, R, PE>(
     Effect.orElseSucceed(() => undefined),
     Effect.flatMap((result) => (result?.generation === "v2" ? paths.v2 : paths.v1)),
   );
-}
-
-// An unread catalog keeps what the registry found before rather than the machine catalog.
-function workspaceModelsFor(
-  machineModels: ReadonlyArray<ServerProviderModel>,
-  cwdModels: Option.Option<ReadonlyArray<ServerProviderModel>>,
-) {
-  if (Option.isNone(cwdModels)) return { workspaceModelsPending: true };
-  return Equal.equals(cwdModels.value, machineModels)
-    ? {}
-    : { models: cwdModels.value, workspaceModels: cwdModels.value };
 }
 
 // Hot reads use the last successful probe; session opens await it to select the correct protocol.
@@ -269,7 +218,6 @@ export const OpenCodeDriver: ProviderDriver<
     const fileSystem = yield* FileSystem.FileSystem;
     const pathService = yield* Path.Path;
     const openCodeRuntime = yield* OpenCodeRuntime.OpenCodeRuntime;
-    const agentScope = yield* AgentScope;
     const httpClient = yield* HttpClient.HttpClient;
     const latestVersions = yield* ProviderLatestVersions.ProviderLatestVersions;
     const digest = yield* Digest.Digest;
@@ -335,17 +283,7 @@ export const OpenCodeDriver: ProviderDriver<
         Effect.provideService(Path.Path, pathService),
       );
     const cachedMaintenance = yield* makeCachedProviderMaintenanceResolution(
-      maintenanceFor(
-        isLocalOpenCodeServerUrl(effectiveConfig.serverUrl)
-          ? probeOpenCodeBinary(
-              effectiveConfig.binaryPath,
-              providerProbeEnvironment(processEnv),
-            ).pipe(
-              Effect.provideService(OpenCodeRuntime.OpenCodeRuntime, openCodeRuntime),
-              Effect.catch(() => runtimeProbe.get),
-            )
-          : runtimeProbe.get,
-      ),
+      maintenanceFor(runtimeProbe.get),
     );
     const resolveMaintenance = (options?: { readonly fresh?: boolean }) =>
       !effectiveConfig.enabled
@@ -401,9 +339,7 @@ export const OpenCodeDriver: ProviderDriver<
     const listOpenCode2Workspace = (cwd: string) =>
       openCode2Server.withConnection(({ client, events }) =>
         Effect.gen(function* () {
-          // OpenCode names a location by its resolved path (no trailing slash or `..`).
-          const directory = pathService.resolve(cwd);
-          const location = { directory };
+          const location = { directory: cwd };
           const scanned = yield* Deferred.make<void>();
           const pending = new Set(["command.updated", "skill.updated"]);
           const stream = yield* events.pipe(Effect.option);
@@ -411,7 +347,7 @@ export const OpenCodeDriver: ProviderDriver<
             yield* stream.value.pipe(
               Stream.runForEach((event) =>
                 "location" in event &&
-                event.location?.directory === directory &&
+                event.location?.directory === cwd &&
                 pending.delete(event.type) &&
                 pending.size === 0
                   ? Deferred.succeed(scanned, undefined)
@@ -430,14 +366,6 @@ export const OpenCodeDriver: ProviderDriver<
               { concurrency: "unbounded" },
             ),
             Deferred.await(scanned),
-            // Without events no scan can be awaited, so trust the first read as before.
-            stream._tag === "None"
-              ? Effect.succeed(true)
-              : client.debug.location.list().pipe(
-                  Effect.map((loaded) => loaded.some((entry) => entry.directory === directory)),
-                  Effect.timeout("2 seconds"),
-                  Effect.orElseSucceed(() => true),
-                ),
           );
         }).pipe(Effect.scoped),
       );
@@ -469,19 +397,6 @@ export const OpenCodeDriver: ProviderDriver<
     );
     const checkProvider = Effect.all(
       {
-        // A configured loopback server reports its running version. Probe the local
-        // CLI separately so a completed npm update is not mistaken for a failure
-        // while that independently managed server still runs the previous binary.
-        installedVersion:
-          effectiveConfig.enabled && isLocalOpenCodeServerUrl(effectiveConfig.serverUrl)
-            ? probeOpenCodeBinary(
-                effectiveConfig.binaryPath,
-                providerProbeEnvironment(processEnv),
-              ).pipe(
-                Effect.map((probed) => probed.version),
-                Effect.orElseSucceed(() => undefined),
-              )
-            : Effect.void,
         provider: checkOpenCodeProviderStatus(
           effectiveConfig,
           host.paths.cwd,
@@ -495,11 +410,7 @@ export const OpenCodeDriver: ProviderDriver<
       },
       { concurrency: "unbounded" },
     ).pipe(
-      Effect.map(({ provider, usageLimits, installedVersion }) => ({
-        ...provider,
-        usageLimits,
-        ...(installedVersion === undefined ? {} : { installedVersion }),
-      })),
+      Effect.map(({ provider, usageLimits }) => ({ ...provider, usageLimits })),
       Effect.map(stampIdentity),
       Effect.provideService(OpenCodeServerOwner.OpenCodeServerOwner, serverOwner),
       Effect.provideService(OpenCodeRuntime.OpenCodeRuntime, openCodeRuntime),
@@ -526,22 +437,11 @@ export const OpenCodeDriver: ProviderDriver<
               slashCommandsPending: undefined,
             })),
           ),
-          // A project's opencode.jsonc can define its own providers.
-          models: OpenCodeRuntime.loadOpenCodeProviderCatalog(client).pipe(
-            Effect.timeoutOption("10 seconds"),
-            Effect.map(
-              Option.flatMapNullishOr((catalog) =>
-                openCodeProviderModels(effectiveConfig, catalog),
-              ),
-            ),
-            Effect.orElseSucceed(() => Option.none<ReadonlyArray<ServerProviderModel>>()),
-          ),
         },
         { concurrency: "unbounded" },
       ).pipe(
-        Effect.map(({ skills, commandInventory, models }) => ({
+        Effect.map(({ skills, commandInventory }) => ({
           skills,
-          models,
           ...commandInventory,
         })),
       );
@@ -579,31 +479,6 @@ export const OpenCodeDriver: ProviderDriver<
               }),
             ),
           );
-
-    const serverUrl = effectiveConfig.serverUrl.trim();
-    const afterUpdate =
-      serverUrl.length > 0
-        ? replaceOutdatedService({
-            binaryPath: effectiveConfig.binaryPath,
-            serverUrl,
-            environment: processEnv,
-          }).pipe(
-            Effect.ensuring(openCode2Server.forget),
-            Effect.mapError(
-              (cause) =>
-                new ProviderDriverError({
-                  driver: DRIVER_KIND,
-                  instanceId,
-                  detail: "Failed to replace the OpenCode service after an update.",
-                  cause,
-                }),
-            ),
-            Effect.provideService(AgentScope, agentScope),
-            Effect.provideService(OpenCodeRuntime.OpenCodeRuntime, openCodeRuntime),
-            Effect.provideService(FileSystem.FileSystem, fileSystem),
-            Effect.provideService(Path.Path, pathService),
-          )
-        : Effect.void;
 
     const snapshotSettings = yield* makeProviderSnapshotSettingsSource(effectiveConfig);
     const snapshot = yield* makeManagedServerProvider<ProviderSnapshotSettings<OpenCodeSettings>>({
@@ -671,39 +546,23 @@ export const OpenCodeDriver: ProviderDriver<
               ),
               Effect.flatMap((probed) =>
                 byOpenCodeRuntime(Effect.succeed(probed), {
-                  v2: Effect.all(
-                    [
-                      snapshot.getSnapshot,
-                      // A project's opencode.jsonc can define its own providers.
-                      readSettledOpenCode2Catalog(
-                        openCode2Server.withConnection(({ client }) =>
-                          loadOpenCode2DirectoryCatalog(client, cwd),
-                        ),
-                      ).pipe(
-                        Effect.map(
-                          Option.map((catalog) =>
-                            openCode2ProviderModels(effectiveConfig, catalog),
-                          ),
-                        ),
+                  v2: Effect.all([
+                    snapshot.getSnapshot,
+                    listOpenCode2Workspace(cwd).pipe(
+                      Effect.timeout("20 seconds"),
+                      Effect.mapError(
+                        (cause) =>
+                          new ProviderDriverError({
+                            driver: DRIVER_KIND,
+                            instanceId,
+                            detail: `Failed to list OpenCode commands and skills for '${cwd}'`,
+                            cause,
+                          }),
                       ),
-                      listOpenCode2Workspace(cwd).pipe(
-                        Effect.timeout("20 seconds"),
-                        Effect.mapError(
-                          (cause) =>
-                            new ProviderDriverError({
-                              driver: DRIVER_KIND,
-                              instanceId,
-                              detail: `Failed to list OpenCode commands and skills for '${cwd}'`,
-                              cause,
-                            }),
-                        ),
-                      ),
-                    ],
-                    { concurrency: "unbounded" },
-                  ).pipe(
-                    Effect.map(([machineSnapshot, cwdModels, { skills, commands }]) => ({
+                    ),
+                  ]).pipe(
+                    Effect.map(([machineSnapshot, { skills, commands }]) => ({
                       ...machineSnapshot,
-                      ...workspaceModelsFor(machineSnapshot.models, cwdModels),
                       skills: openCode2SkillsToServerProviderSkills(skills),
                       slashCommands: openCode2CommandsToServerProviderSlashCommands(commands),
                       // A finished scan lists at least the built-ins. None means it
@@ -715,15 +574,12 @@ export const OpenCodeDriver: ProviderDriver<
                     snapshot.getSnapshot,
                     loadWorkspaceForCwd(cwd).pipe(Effect.timeout("20 seconds")),
                   ]).pipe(
-                    Effect.map(
-                      ([machineSnapshot, { skills, models, commands, slashCommandsPending }]) => ({
-                        ...machineSnapshot,
-                        ...workspaceModelsFor(machineSnapshot.models, models),
-                        skills: openCodeSkillsToServerProviderSkills(skills),
-                        slashCommands: openCodeCommandsToServerProviderSlashCommands(commands),
-                        slashCommandsPending,
-                      }),
-                    ),
+                    Effect.map(([machineSnapshot, { skills, commands, slashCommandsPending }]) => ({
+                      ...machineSnapshot,
+                      skills: openCodeSkillsToServerProviderSkills(skills),
+                      slashCommands: openCodeCommandsToServerProviderSlashCommands(commands),
+                      slashCommandsPending,
+                    })),
                     Effect.mapError(
                       (cause) =>
                         new ProviderDriverError({
@@ -737,8 +593,6 @@ export const OpenCodeDriver: ProviderDriver<
                 }),
               ),
             ),
-      invalidateCaches: openCode2Server.forget,
-      afterUpdate,
       orchestrationAdapter,
       textGeneration,
     } satisfies ProviderInstance;

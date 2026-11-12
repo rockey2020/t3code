@@ -2,7 +2,6 @@ import { settlePromise, squashAtomCommandFailure } from "@t3tools/client-runtime
 import { AsyncResult } from "effect/reactivity";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { formatDiffCount } from "@t3tools/client-runtime/diff-count";
-import { LegendList } from "@legendapp/list/react-native";
 import { useNavigation, type StaticScreenProps } from "@react-navigation/native";
 import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
 import { AppBar } from "../../components/ui/AppBar";
@@ -11,6 +10,7 @@ import type { ReviewSectionItem } from "./reviewModel";
 import { useReviewHeaderPresentation } from "./useReviewHeaderPresentation";
 import { type Ref, type ReactElement, useImperativeHandle, useRef, useState } from "react";
 import {
+  FlatList,
   Platform,
   Pressable,
   RefreshControl,
@@ -341,14 +341,11 @@ function ReviewFileNavigator({ files, sectionId, onSelectFile, ref }: ReviewFile
         hideBottomBorder
       />
       <ScreenContent insetHorizontal>
-        <LegendList
+        <FlatList
           renderScrollComponent={NativeScrollView}
           data={files}
-          // Rows keep their callback until extraData changes; it reads collapsed files.
-          extraData={[selectedFileId, handleSelectFile]}
+          extraData={selectedFileId}
           keyExtractor={(file) => file.id}
-          estimatedItemSize={64}
-          recycleItems
           contentInsetAdjustmentBehavior="automatic"
           contentContainerStyle={{ paddingHorizontal: 8, paddingVertical: 8 }}
           renderItem={renderFile}

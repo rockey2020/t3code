@@ -54,7 +54,6 @@ import * as ProviderTurnStart from "./ProviderTurnStartService.ts";
 import * as RunExecutionService from "./RunExecutionService.ts";
 import * as ProviderUsageAnalytics from "../telemetry/ProviderUsageAnalytics.ts";
 import * as RuntimePolicy from "./RuntimePolicy.ts";
-import * as TurnItemPositionStore from "./TurnItemPositionStore.ts";
 
 const isDomainEvent = Schema.is(OrchestrationV2DomainEvent);
 
@@ -138,7 +137,6 @@ function startWithMissingWorktree(
         Layer.mock(ContextHandoffService.ContextHandoffServiceV2)({}),
         Layer.mock(EventSink.EventSinkV2)({ writeIfRunCurrent }),
         IdAllocator.layer,
-        Layer.mock(TurnItemPositionStore.TurnItemPositionStoreV2)({}),
         Layer.succeed(FileSystem.FileSystem, {
           exists: () => Effect.succeed(false),
           realPath: (target: string) =>
@@ -201,7 +199,7 @@ function startWithMissingWorktree(
 
   const start = Effect.gen(function* () {
     return yield* (yield* ProviderTurnStart.ProviderTurnStartServiceV2)
-      .start({ threadId, runId, willRetry: true })
+      .start({ threadId, runId })
       .pipe(Effect.flip);
   }).pipe(Effect.provide(layer), Effect.runPromise);
   return {
@@ -288,7 +286,6 @@ function makeLocalCommandHarness(input: {
   readonly interruptRunBeforeOpenFailure?: boolean;
   readonly writeFailure?: unknown;
   readonly failReadsAfterRunning?: boolean;
-  readonly recoveryReadFailure?: string;
   readonly previousTurn?: {
     readonly runStatus: "failed" | "completed";
     readonly turnStatus: "running" | "completed" | "interrupted";
@@ -925,21 +922,14 @@ function makeLocalCommandHarness(input: {
   const getRuntimeRecoveryProjection = vi.fn<
     ProjectionStore.ProjectionStoreV2Shape["getRuntimeRecoveryProjection"]
   >(() =>
-    input.recoveryReadFailure !== undefined
-      ? Effect.fail(
-          new ProjectionStore.ProjectionStoreReadError({
-            threadId,
-            cause: input.recoveryReadFailure,
-          }),
-        )
-      : Effect.as(failReadIfRunning, {
-          ...projection,
-          hasConversation: projection.messages.some(
-            (m) =>
-              m.role === "user" &&
-              (m.text.trim().toLowerCase() !== "/compact" || m.attachments.length > 0),
-          ),
-        }),
+    Effect.as(failReadIfRunning, {
+      ...projection,
+      hasConversation: projection.messages.some(
+        (m) =>
+          m.role === "user" &&
+          (m.text.trim().toLowerCase() !== "/compact" || m.attachments.length > 0),
+      ),
+    }),
   );
   const layer = ProviderTurnStart.layer.pipe(
     Layer.provide(
@@ -970,7 +960,6 @@ function makeLocalCommandHarness(input: {
             }),
         }),
         IdAllocator.layer,
-        Layer.mock(TurnItemPositionStore.TurnItemPositionStoreV2)({}),
         layerWorktreeLocation(input.worktreesDir),
         input.fileSystem === undefined
           ? FileSystem.layerNoop({ exists: () => Effect.succeed(true) })
@@ -1665,25 +1654,6 @@ effectIt.effect("starts another provider in the same checkout while a turn is pe
     expect(second.projection().runs.at(-1)?.status).toBe("running");
     yield* Deferred.succeed(releaseTurn, undefined);
     yield* Fiber.join(pending);
-  }),
-);
-
-effectIt.effect("fails a starting run when its recovery state cannot be read", () =>
-  Effect.gen(function* () {
-    const harness = makeLocalCommandHarness({
-      text: "Continue",
-      recoveryReadFailure: "stored turn item no longer decodes",
-    });
-
-    yield* harness.start.pipe(Effect.ignore);
-
-    expect(harness.open).not.toHaveBeenCalled();
-    expect(harness.startRootRun).not.toHaveBeenCalled();
-    const projection = harness.projection();
-    expect(projection.runs.at(-1)).toMatchObject({ status: "failed", startedAt: null });
-    expect(projection.attempts[0]).toMatchObject({ status: "failed", startedAt: null });
-    expect(projection.nodes[0]).toMatchObject({ status: "failed", startedAt: null });
-    expect(projection.turnItems).toMatchObject([{ type: "error", status: "failed" }]);
   }),
 );
 

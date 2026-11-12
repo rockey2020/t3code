@@ -234,12 +234,11 @@ export function shouldOfferResumeCompaction(input: {
 }
 
 /**
- * The tokens a plain send into an idle thread compacts first, as web's composer does under
- * "When you return", or null when it sends as is. Web reads the same state for its "Compact and
- * send" button. A send that hands off to another conversation starts that one fresh, so only the
- * resumed one counts.
+ * Whether a plain send into an idle thread compacts it first, as web's composer does under
+ * "When you return". Web reads the same state for its "Compact and send" button. A send that
+ * hands off to another conversation starts that one fresh, so only the resumed one counts.
  */
-export function compactBeforeSendTokens(input: {
+export function shouldCompactBeforeSend(input: {
   readonly projection: Pick<
     ThreadStructure,
     | "thread"
@@ -260,7 +259,7 @@ export function compactBeforeSendTokens(input: {
   readonly text: string;
   readonly threadIdle: boolean;
   readonly now: string;
-}): number | null {
+}): boolean {
   const { projection } = input;
   const provider = input.providers.find((entry) => entry.instanceId === input.selection.instanceId);
   if (
@@ -291,7 +290,7 @@ export function compactBeforeSendTokens(input: {
         .map((request) => ({ kind: "user-input.resolved", payload: { answers: request.answers } })),
     )
   ) {
-    return null;
+    return false;
   }
   const activeProviderThreadId = projection.thread.activeProviderThreadId;
   const providerThread = projection.providerThreads.find(
@@ -307,7 +306,8 @@ export function compactBeforeSendTokens(input: {
     liveUsage,
     providerThread,
   );
-  return contextWindow !== null &&
+  return (
+    contextWindow !== null &&
     shouldOfferResumeCompaction({
       provider: provider.driver,
       usedTokens: contextWindow.usedTokens,
@@ -315,6 +315,5 @@ export function compactBeforeSendTokens(input: {
       promptCacheTtlMs: liveUsage?.promptCacheTtlMs,
       now: input.now,
     })
-    ? contextWindow.usedTokens
-    : null;
+  );
 }

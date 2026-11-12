@@ -1,5 +1,4 @@
 export const globalUiMessages = {
-  "Search is limited to {count} characters.": "搜索内容不能超过 {count} 个字符。",
   // Confirm dialog
   "Confirm action": "确认操作",
   "This action requires your confirmation.": "此操作需要你的确认。",

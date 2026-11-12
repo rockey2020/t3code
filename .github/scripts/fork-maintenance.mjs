@@ -173,7 +173,7 @@ export async function dispatchDesktopBuilds(
 ) {
   if (builds.length === 0) return;
   // Recovery is limited to the approved failed run and observed disable event.
-  if (runId === "43248746709") {
+  if (runId === "43261831511") {
     await verifyRepository(request, repository);
     const path = `repos/${config.repository}/actions/workflows/416001695`;
     const workflow = await request(path);
@@ -182,7 +182,7 @@ export async function dispatchDesktopBuilds(
     if (workflow.state !== "active") {
       if (
         workflow.state !== "disabled_manually" ||
-        workflow.updated_at !== "2026-11-12T14:12:38.000Z"
+        workflow.updated_at !== "2026-11-12T16:32:55.000Z"
       )
         throw new Error("Desktop workflow disable event changed; recovery refused.");
       await request(`${path}/enable`, { method: "PUT" });

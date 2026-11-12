@@ -22,7 +22,7 @@ function desktopDispatchFixture(overrides = {}) {
     id: 416001695,
     path: ".github/workflows/fork-desktop.yml",
     state: "disabled_manually",
-    updated_at: "2026-11-12T14:12:38.000Z",
+    updated_at: "2026-11-12T16:32:55.000Z",
     ...overrides.workflow,
   };
   const requests = [];
@@ -31,7 +31,7 @@ function desktopDispatchFixture(overrides = {}) {
   return {
     requests,
     options: {
-      runId: "43248746709",
+      runId: "43261831511",
       repository: "rockey2020/t3code",
       request: async (path, options = {}) => {
         const method = options.method ?? "GET";
@@ -44,7 +44,7 @@ function desktopDispatchFixture(overrides = {}) {
           workflow = {
             ...workflow,
             state: "active",
-            updated_at: "2026-11-12T15:00:00.000Z",
+            updated_at: "2026-11-12T16:34:00.000Z",
             ...overrides.enabledWorkflow,
           };
           return null;
@@ -84,13 +84,13 @@ NodeTest.test(
     await dispatchDesktopBuilds([build], options);
     NodeAssert.equal(requests.filter(({ method }) => method === "PUT").length, 1);
     NodeAssert.equal(logs.length, 1);
-    NodeAssert.match(logs[0].message, /416001695.*43248746709/);
+    NodeAssert.match(logs[0].message, /416001695.*43261831511/);
     NodeAssert.deepEqual(logs[0].methods, ["GET", "GET", "PUT", "GET"]);
   },
 );
 
 NodeTest.test("other maintenance runs never enable a disabled workflow", async () => {
-  for (const runId of ["", "43248746710", "43248746708"]) {
+  for (const runId of ["", "43248746709", "43261831510", "43261831512"]) {
     const { requests, options } = desktopDispatchFixture();
     await dispatchDesktopBuilds([{ channel: "nightly" }], { ...options, runId });
     NodeAssert.deepEqual(
@@ -124,7 +124,7 @@ for (const scenario of [
   { name: "different workflow path", workflow: { path: ".github/workflows/other.yml" } },
   { name: "different active workflow", workflow: { id: 1, state: "active" } },
   { name: "different disabled state", workflow: { state: "disabled_inactivity" } },
-  { name: "different disable timestamp", workflow: { updated_at: "2026-11-12T14:12:39.000Z" } },
+  { name: "previous disable event", workflow: { updated_at: "2026-11-12T14:12:38.000Z" } },
   { name: "missing disable timestamp", workflow: { updated_at: undefined } },
   {
     name: "denied enable",

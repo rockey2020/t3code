@@ -77,6 +77,7 @@ export function forkOverlayDiff(run, from, to) {
   return run([
     "diff",
     "--binary",
+    "--full-index",
     from,
     to,
     "--",
@@ -86,6 +87,17 @@ export function forkOverlayDiff(run, from, to) {
     ":(exclude).github/workflows",
     ":(exclude).github/upstream-workflows",
   ]);
+}
+
+export function releaseDelta(run, from, to) {
+  const patch = forkOverlayDiff(run, from, to);
+  const workflowDelta = run(["diff", "--full-index", from, to, "--", ".github/workflows"]);
+  const fingerprint = NodeCrypto.createHash("sha256")
+    .update(patch)
+    .update(workflowDelta)
+    .digest("hex")
+    .slice(0, 12);
+  return { patch, workflowDelta, fingerprint };
 }
 
 export function auditedOverlay({
@@ -156,7 +168,7 @@ async function verifyRepository() {
 function archiveUpstreamWorkflows(original) {
   NodeFS.mkdirSync(NodePath.resolve(root, ".github/upstream-workflows"), { recursive: true });
   for (const name of NodeFS.readdirSync(NodePath.resolve(root, ".github/workflows"))) {
-    if (["fork-maintenance.yml", "fork-build.yml", "fork-watchdog.yml"].includes(name)) continue;
+    if (["fork-maintenance.yml", "fork-desktop.yml", "fork-watchdog.yml"].includes(name)) continue;
     NodeFS.renameSync(
       NodePath.resolve(root, ".github/workflows", name),
       NodePath.resolve(root, ".github/upstream-workflows", name),
@@ -255,24 +267,7 @@ async function prepare() {
   const state = JSON.parse(
     NodeFS.readFileSync(NodePath.resolve(root, ".fork/upstream.json"), "utf8"),
   );
-  const patch = git([
-    "diff",
-    "--binary",
-    state.sha,
-    fork,
-    "--",
-    ".",
-    ":(exclude).fork/upstream.json",
-    ":(exclude).fork/release-sources.json",
-    ":(exclude).github/workflows",
-    ":(exclude).github/upstream-workflows",
-  ]);
-  const workflowDelta = git(["diff", state.sha, fork, "--", ".github/workflows"]);
-  const fingerprint = NodeCrypto.createHash("sha256")
-    .update(patch)
-    .update(workflowDelta)
-    .digest("hex")
-    .slice(0, 12);
+  const { patch, fingerprint } = releaseDelta(git, state.sha, fork);
   const releases = [];
   for (let page = 1; page <= 10; page++) {
     const next = await api(`repos/${config.upstream}/releases?per_page=100&page=${page}`);
@@ -402,7 +397,7 @@ async function prepare() {
     ),
   );
   for (const build of builds) {
-    await api(`repos/${config.repository}/actions/workflows/fork-build.yml/dispatches`, {
+    await api(`repos/${config.repository}/actions/workflows/fork-desktop.yml/dispatches`, {
       method: "POST",
       body: JSON.stringify({ ref: config.branch, inputs: build }),
     });

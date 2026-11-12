@@ -1,5 +1,3 @@
-// @effect-diagnostics-next-line nodeBuiltinImport:off - flushSync must write before the process exits.
-import * as NodeFS from "node:fs";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -175,8 +173,6 @@ export interface TraceSink {
   readonly filePath: string;
   push: (record: TraceRecord) => void;
   flush: Effect.Effect<void>;
-  /** Appends buffered records synchronously, for process exit where async writes never land. */
-  flushSync: () => void;
   close: () => Effect.Effect<void>;
 }
 
@@ -548,17 +544,6 @@ export const makeTraceSink = Effect.fn("makeTraceSink")(function* (options: Trac
       }
     },
     flush,
-    flushSync() {
-      if (buffer.length === 0) return;
-      const text = buffer.map((record) => record.text).join("");
-      buffer = [];
-      bufferBytes = 0;
-      try {
-        NodeFS.appendFileSync(options.filePath, text);
-      } catch {
-        return;
-      }
-    },
     close: () => flush,
   } satisfies TraceSink;
 });

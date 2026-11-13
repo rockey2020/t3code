@@ -32,7 +32,12 @@ jobs:
             .fork
             .github/scripts
       - name: Test safe queue recovery
-        run: node --test .github/scripts/fork-watchdog.node-test.mjs
+        run: node --test .github/scripts/fork-watchdog.node-test.mjs .github/scripts/fork-restore-once.node-test.mjs
+      - name: Restore the verified November 13 disable once
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.run_attempt == 1 && github.event.before == '9b18f28b809841821e161441c3b6d2b32301c53f'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node .github/scripts/fork-restore-once.mjs
       - name: Recover stalled maintenance without interrupting active jobs
         env:
           GH_TOKEN: ${{ github.token }}

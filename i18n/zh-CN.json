@@ -2976,6 +2976,7 @@
   "apps/web/src/components/device/deviceUi.messages.ts": {
     "This browser cannot decode {codec}.": "此浏览器无法解码 {codec}。",
     "Video decoder: {error}": "视频解码器：{error}",
+    "Device lease ended: {reason}": "设备租用已结束：{reason}",
     "This browser cannot decode this device's {codec} stream.": "此浏览器无法解码此设备的 {codec} 视频流。",
     "This browser cannot decode the Duo panel's {codec} stream.": "此浏览器无法解码 Duo 面板的 {codec} 视频流。",
     "Device stream offer failed ({status}). Retrying…": "设备流协商失败（{status}）。正在重试…",
@@ -4860,6 +4861,7 @@
     "Reconnect to delete this branch": "重新连接以删除此分支",
     "Squash and merge": "压缩并合并",
     "Rebase and merge": "变基并合并",
+    "Fast-forward merge": "快进合并",
     "{label} number": "{label} 编号",
     "Try again.": "请重试。",
     "Saving…": "正在保存…",

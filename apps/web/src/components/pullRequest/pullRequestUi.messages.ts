@@ -368,6 +368,7 @@ export const pullRequestUiMessages = {
   "Reconnect to delete this branch": "重新连接以删除此分支",
   "Squash and merge": "压缩并合并",
   "Rebase and merge": "变基并合并",
+  "Fast-forward merge": "快进合并",
   "{label} number": "{label} 编号",
   "Try again.": "请重试。",
   "Saving…": "正在保存…",

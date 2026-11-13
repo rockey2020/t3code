@@ -14,10 +14,10 @@
 // Uncommitted and untracked files count. Affected packages come from
 // .github/scripts/ci-changes.cjs, the same mapping CI uses to gate its jobs.
 // The steps run side by side within a budget derived from the machine's cores
-// and available memory, and each prints its output when it finishes. A step
+// and available memory. Sequential runs stream output; parallel runs print it
+// when each step finishes, including partial output on interruption. A step
 // running past the timeout is killed with its process group and reported as
-// TIMEOUT. A rerun on exactly the files of the last passing run prints that
-// run's summary.
+// TIMEOUT. A rerun on exactly the files of the last passing run prints that run's summary.
 import * as NodeCrypto from "node:crypto";
 import * as NodeOS from "node:os";
 
@@ -52,7 +52,11 @@ export type Outcome = "pass" | "FAIL" | "TIMEOUT";
 
 export interface Step<R> {
   readonly name: string;
-  readonly run: Effect.Effect<{ readonly ok: boolean; readonly output: string }, never, R>;
+  readonly run: Effect.Effect<
+    { readonly ok: boolean; readonly output: string; readonly streamed?: boolean },
+    never,
+    R
+  >;
   // Budget slots the step holds: one per worker it runs in parallel.
   readonly weight?: number;
   // Vitest runs started together race to rebuild node_modules/.vitest-cache (ENOTEMPTY).
@@ -75,6 +79,7 @@ export const runSteps = Effect.fn("checkChanged.runSteps")(function* <R>(
     (step) => {
       const timed = Effect.gen(function* () {
         const started = yield* Clock.currentTimeMillis;
+        yield* Console.log(`\n> vp ${step.name}  running  (timeout ${options.timeoutSeconds}s)`);
         const result = yield* Effect.timeoutOption(step.run, `${options.timeoutSeconds} seconds`);
         const seconds = ((yield* Clock.currentTimeMillis) - started) / 1000;
         const outcome: Outcome = Option.match(result, {
@@ -86,8 +91,9 @@ export const runSteps = Effect.fn("checkChanged.runSteps")(function* <R>(
             ? `killed after ${options.timeoutSeconds}s`
             : `${seconds.toFixed(1)}s`;
         yield* Console.log(`\n> vp ${step.name}  ${outcome}  ${time}`);
-        const output = Option.getOrUndefined(result)?.output.trimEnd();
-        if (output) yield* Console.log(output);
+        const completed = Option.getOrUndefined(result);
+        const output = completed?.output.trimEnd();
+        if (output && !completed?.streamed) yield* Console.log(output);
         return { name: step.name, outcome, time };
       });
       const slots = Math.min(step.weight ?? 1, options.concurrency);
@@ -337,7 +343,13 @@ const checkChanged = Effect.fn("checkChanged")(function* (input: {
   // It reads files other than the ones beside it, so no changed file selects it.
   if (affected.includes("t3")) tests.add("apps/server/src/provider/AgentContextBudget.test.ts");
   // The fork's zh-CN checks read every catalog, so no catalog sits beside them.
-  if (files.some((file) => /(?:\.messages|Messages|menuLocalization)\.ts$|^i18n\//.test(file))) {
+  if (
+    files.some((file) =>
+      /(?:\.messages|Messages|menuLocalization)\.ts$|^i18n\/|\/i18n\/translations\/(?:en|zh)\.json$/.test(
+        file,
+      ),
+    )
+  ) {
     tests.add("scripts/fork-i18n.test.ts");
   }
   const { vitestTests, nodeTests } = splitTests(tests);
@@ -413,24 +425,45 @@ const checkChanged = Effect.fn("checkChanged")(function* (input: {
   // Output is piped, so keep the colors a terminal would get.
   const env = process.stdout.isTTY ? { FORCE_COLOR: "1" } : {};
   const vp = (args: ReadonlyArray<string>, cwd = root) =>
-    Effect.scoped(
-      Effect.gen(function* () {
-        const [command, commandArgs] = vitePlusCommand(args, platform);
-        const handle = yield* spawner.spawn(
-          ChildProcess.make(command, commandArgs, {
-            cwd,
-            env,
-            extendEnv: true,
-            forceKillAfter: "5 seconds",
-          }),
-        );
-        const [output, exitCode] = yield* Effect.all(
-          [Stream.mkString(Stream.decodeText(handle.all)), handle.exitCode],
-          { concurrency: 2 },
-        );
-        return { ok: exitCode === 0, output };
-      }),
-    ).pipe(Effect.catch((error) => Effect.succeed({ ok: false, output: error.message })));
+    Effect.suspend(() => {
+      let output = "";
+      const streamed = concurrency === 1;
+      return Effect.scoped(
+        Effect.gen(function* () {
+          const [command, commandArgs] = vitePlusCommand(args, platform);
+          const handle = yield* spawner.spawn(
+            ChildProcess.make(command, commandArgs, {
+              cwd,
+              env,
+              extendEnv: true,
+              forceKillAfter: "5 seconds",
+            }),
+          );
+          const [, exitCode] = yield* Effect.all(
+            [
+              Stream.runForEach(Stream.decodeText(handle.all), (chunk) =>
+                Effect.gen(function* () {
+                  output += chunk;
+                  if (streamed) yield* Console.log(chunk.trimEnd());
+                }),
+              ),
+              handle.exitCode,
+            ],
+            { concurrency: 2 },
+          );
+          return { ok: exitCode === 0, output, streamed };
+        }),
+      ).pipe(
+        Effect.onInterrupt(() =>
+          !streamed && output
+            ? Console.log(`\n> vp ${args[0]}  interrupted output\n${output.trimEnd()}`)
+            : Effect.void,
+        ),
+        Effect.catch((error) =>
+          Effect.succeed({ ok: false, output: streamed ? error.message : output + error.message }),
+        ),
+      );
+    });
 
   // Resolve without the lockfile in a temp copy to preserve the working tree and lockfile.
   // Copy mobile modules too: they are file: dependencies, not workspace packages.
@@ -558,8 +591,8 @@ const checkChanged = Effect.fn("checkChanged")(function* (input: {
   }
   if (results.some((result) => result.outcome === "TIMEOUT")) {
     summary.push(
-      `  TIMEOUT: ran past ${timeoutSeconds}s and was killed; this is not a check failure. ` +
-        "Raise --timeout or lower --concurrency.",
+      `  TIMEOUT: ran past ${timeoutSeconds}s and was killed; validation is incomplete. ` +
+        "Inspect the output before raising --timeout or lowering --concurrency.",
     );
   }
   const ciOnly = Object.entries({

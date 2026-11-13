@@ -29,16 +29,89 @@ export function releaseChannel(tag) {
   return null;
 }
 
-export function selectReleases(releases) {
-  const sorted = releases
-    .filter((r) => !r.draft)
+function channelReleases(releases, channel) {
+  return releases
+    .filter(
+      (r) =>
+        !r.draft &&
+        releaseChannel(r.tag_name) === channel &&
+        (channel === "nightly" || !r.prerelease),
+    )
     .toSorted((a, b) => b.published_at.localeCompare(a.published_at));
+}
+
+export function selectReleases(releases) {
   return ["stable", "nightly"].flatMap((channel) => {
-    const release = sorted.find(
-      (r) => releaseChannel(r.tag_name) === channel && (channel === "nightly" || !r.prerelease),
-    );
+    const release = channelReleases(releases, channel)[0];
     return release ? [{ ...release, channel }] : [];
   });
+}
+
+export async function selectValidatedReleases({ fork, run = git, request = api }) {
+  const releases = [];
+  const resolved = new Map();
+  for (let page = 1; page <= 10; page++) {
+    const next = await request(`repos/${config.upstream}/releases?per_page=100&page=${page}`);
+    if (!Array.isArray(next)) throw new Error("Incomplete published release inventory.");
+    releases.push(...next);
+    const selected = [];
+    const deferred = [];
+    const failures = [];
+    for (const channel of ["stable", "nightly"]) {
+      for (const release of channelReleases(releases, channel)) {
+        const tag = release.tag_name;
+        try {
+          if (!resolved.has(tag)) {
+            run(["fetch", "--no-tags", "upstream", `refs/tags/${tag}`]);
+            const source = run(["rev-parse", "FETCH_HEAD^{commit}"]);
+            if (!/^[0-9a-f]{40}$/.test(source)) throw new Error(`Invalid release source: ${tag}`);
+            let ancestor = true;
+            try {
+              run(["merge-base", "--is-ancestor", source, fork]);
+            } catch (error) {
+              // Only exit 1 proves non-ancestry; missing objects and Git errors fail closed.
+              if (error.status !== 1) throw error;
+              ancestor = false;
+            }
+            resolved.set(tag, { source, ancestor });
+          }
+          const result = resolved.get(tag);
+          if (result.error) throw result.error;
+          if (result.ancestor) {
+            selected.push({ ...release, channel, source: result.source });
+            break;
+          }
+          deferred.push({
+            channel,
+            tag,
+            source: result.source,
+            reason: "not-ancestor-of-validated-fork",
+            fork,
+          });
+        } catch (error) {
+          resolved.set(tag, { error });
+          failures.push({ channel, tag, error: String(error) });
+          break;
+        }
+      }
+    }
+    if (selected.length + failures.length === 2) return { selected, deferred, failures };
+    if (next.length < 100) {
+      if (selectReleases(releases).length !== 2)
+        throw new Error("Could not resolve both published upstream stable and nightly releases.");
+      for (const channel of ["stable", "nightly"]) {
+        if (![...selected, ...failures].some((release) => release.channel === channel))
+          failures.push({
+            channel,
+            error: "No published release is an ancestor of the validated fork.",
+          });
+      }
+      return { selected, deferred, failures };
+    }
+  }
+  throw new Error(
+    "Incomplete published release inventory: validated selection exceeds page limit.",
+  );
 }
 
 export function releaseComplete(release) {
@@ -318,28 +391,20 @@ async function prepare() {
     NodeFS.readFileSync(NodePath.resolve(root, ".fork/upstream.json"), "utf8"),
   );
   const { patch, fingerprint } = releaseDelta(git, state.sha, fork);
-  const releases = [];
-  for (let page = 1; page <= 10; page++) {
-    const next = await api(`repos/${config.upstream}/releases?per_page=100&page=${page}`);
-    releases.push(...next);
-    if (selectReleases(releases).length === 2 || next.length < 100) break;
-  }
-  const selected = selectReleases(releases);
-  if (selected.length !== 2)
-    throw new Error(
-      "Could not NodePath.resolve both published upstream stable and nightly releases.",
+  const { selected, deferred, failures } = await selectValidatedReleases({ fork });
+  for (const release of deferred)
+    console.log(
+      `Deferred ${release.channel} ${release.tag} (${release.source}): not an ancestor of validated fork ${fork}; retry on the next synchronized run.`,
     );
   const overridePath = NodePath.resolve(root, ".fork/release-sources.json");
   const overrides = NodeFS.existsSync(overridePath)
     ? JSON.parse(NodeFS.readFileSync(overridePath, "utf8"))
     : {};
   const builds = [];
-  const failures = [];
   for (const release of selected) {
     try {
       const tag = `${release.tag_name}-zh.${fingerprint}`;
-      git(["fetch", "--no-tags", "upstream", `refs/tags/${release.tag_name}`]);
-      const source = git(["rev-parse", "FETCH_HEAD^{commit}"]);
+      const source = release.source;
       const branch = `fork-build/${release.tag_name}-${fingerprint}`;
       const remote = git(["ls-remote", "--heads", "origin", `refs/heads/${branch}`]).split(/\s/)[0];
       if (remote) {
@@ -435,10 +500,15 @@ async function prepare() {
     NodePath.resolve(root, "fork-maintenance-report.json"),
     JSON.stringify(
       {
-        status: failures.length ? "partial-failure" : "prepared",
+        status: failures.length
+          ? "partial-failure"
+          : deferred.length
+            ? "prepared-with-deferred"
+            : "prepared",
         fork,
         upstream: state.sha,
         builds,
+        deferred,
         failures,
       },
       null,

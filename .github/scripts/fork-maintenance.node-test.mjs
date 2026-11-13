@@ -7,6 +7,7 @@ import * as NodePath from "node:path";
 import {
   releaseChannel,
   selectReleases,
+  selectValidatedReleases,
   releaseComplete,
   auditedOverlay,
   normalizedOverlayBase,
@@ -515,7 +516,7 @@ NodeTest.test("push validates its snapshot while scheduled and manual runs merge
   }
 });
 
-NodeTest.test("prepare failure retains validated outputs for the unaffected channel", () => {
+async function prepareSelectionTest(scenario) {
   const directory = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "fork-prepare-outputs-"));
   const repository = NodePath.join(directory, "source");
   const origin = NodePath.join(directory, "origin.git");
@@ -567,6 +568,19 @@ NodeTest.test("prepare failure retains validated outputs for the unaffected chan
     run(["commit", "-m", "fork"]);
     const fork = run(["rev-parse", "HEAD"]);
     const { fingerprint } = releaseDelta(run, source, fork);
+    const newerTag = "v0.1.10-nightly.20261113.2";
+    let newerSource;
+    if (scenario === "new nightly") {
+      run(["checkout", "--detach", source]);
+      NodeFS.writeFileSync(
+        NodePath.join(repository, "app.txt"),
+        "new unvalidated upstream feature\n",
+      );
+      run(["commit", "-am", "upstream published during validation"]);
+      newerSource = run(["rev-parse", "HEAD"]);
+      run(["tag", newerTag]);
+      run(["checkout", "main"]);
+    }
     run(["clone", "--bare", repository, origin], directory);
     run(["remote", "add", "origin", origin]);
     run(["remote", "add", "upstream", origin]);
@@ -574,6 +588,7 @@ NodeTest.test("prepare failure retains validated outputs for the unaffected chan
       ["stable", "v0.1.9"],
       ["nightly", "v0.1.10-nightly.20261112.1"],
     ]) {
+      if (scenario === "new nightly" && channel === "nightly") continue;
       run(["checkout", "-b", `fork-build/${tag}-${fingerprint}`, fork]);
       NodeFS.writeFileSync(
         NodePath.join(repository, ".fork/build.json"),
@@ -581,7 +596,7 @@ NodeTest.test("prepare failure retains validated outputs for the unaffected chan
           upstreamSha: source,
           fingerprint,
           upstreamTag: tag,
-          channel: channel === "stable" ? channel : "wrong",
+          channel: scenario === "wrong provenance" && channel === "nightly" ? "wrong" : channel,
         }),
       );
       run(["add", "."]);
@@ -589,6 +604,21 @@ NodeTest.test("prepare failure retains validated outputs for the unaffected chan
       run(["push", "origin", "HEAD"]);
     }
     run(["checkout", "main"]);
+    const releases = [
+      { tag_name: "v0.1.9", published_at: "2026-11-12T00:00:00Z" },
+      {
+        tag_name: "v0.1.10-nightly.20261112.1",
+        published_at: "2026-11-12T01:00:00Z",
+        prerelease: true,
+      },
+    ];
+    if (["new nightly", "missing nightly"].includes(scenario))
+      releases.unshift({
+        tag_name: newerTag,
+        published_at: "2026-11-13T00:00:00Z",
+        prerelease: true,
+      });
+    if (scenario === "missing inventory") releases.splice(1);
     const outputPath = NodePath.join(directory, "output");
     const result = NodeChildProcess.spawnSync(
       process.execPath,
@@ -596,18 +626,15 @@ NodeTest.test("prepare failure retains validated outputs for the unaffected chan
         "--input-type=module",
         "--eval",
         `
-      globalThis.fetch = async (url, options) => {
-        if (options.method && options.method !== 'GET') throw new Error('Unexpected mutation');
-        if (url === 'https://api.github.com/repos/fixture/fork') return Response.json({ id: 123 });
-        if (url === 'https://api.github.com/repos/fixture/upstream/releases?per_page=100&page=1') return Response.json([
-          { tag_name: 'v0.1.9', published_at: '2026-11-12T00:00:00Z' },
-          { tag_name: 'v0.1.10-nightly.20261112.1', published_at: '2026-11-12T01:00:00Z', prerelease: true }
-        ]);
-        throw new Error('Unexpected API path: ' + url);
-      };
-      process.argv = [process.execPath, process.cwd() + '/.github/scripts/fork-maintenance.mjs', 'prepare'];
-      await import(process.argv[1]);
-    `,
+    globalThis.fetch = async (url, options) => {
+      if (options.method && options.method !== 'GET') throw new Error('Unexpected mutation');
+      if (url === 'https://api.github.com/repos/fixture/fork') return Response.json({ id: 123 });
+      if (url === 'https://api.github.com/repos/fixture/upstream/releases?per_page=100&page=1') return Response.json(${JSON.stringify(releases)});
+      throw new Error('Unexpected API path: ' + url);
+    };
+    process.argv = [process.execPath, process.cwd() + '/.github/scripts/fork-maintenance.mjs', 'prepare'];
+    await import(process.argv[1]);
+  `,
       ],
       {
         cwd: repository,
@@ -615,8 +642,15 @@ NodeTest.test("prepare failure retains validated outputs for the unaffected chan
         env: { ...process.env, GITHUB_REPOSITORY: "fixture/fork", GITHUB_OUTPUT: outputPath },
       },
     );
-    NodeAssert.equal(result.status, 1);
-    NodeAssert.match(result.stderr, /unaffected builds are available/);
+    const failed = ["wrong provenance", "missing nightly", "missing inventory"].includes(scenario);
+    NodeAssert.equal(result.status, failed ? 1 : 0, result.stderr);
+    if (failed)
+      NodeAssert.match(
+        result.stderr,
+        scenario === "missing inventory"
+          ? /both published upstream/
+          : /unaffected builds are available/,
+      );
     const outputs = Object.fromEntries(
       NodeFS.readFileSync(outputPath, "utf8")
         .trim()
@@ -626,17 +660,171 @@ NodeTest.test("prepare failure retains validated outputs for the unaffected chan
           return [line.slice(0, index), line.slice(index + 1)];
         }),
     );
-    NodeAssert.equal(outputs.has_builds, "true");
+    NodeAssert.equal(outputs.has_builds, scenario === "missing inventory" ? "false" : "true");
     const builds = JSON.parse(outputs.builds);
-    NodeAssert.equal(builds.length, 1);
+    if (scenario === "missing inventory") {
+      NodeAssert.deepEqual(builds, []);
+      return;
+    }
+    NodeAssert.equal(builds.length, failed ? 1 : 2);
     NodeAssert.equal(builds[0].channel, "stable");
     NodeAssert.equal(builds[0].artifact_namespace, `stable-${builds[0].ref}-`);
     const report = JSON.parse(
       NodeFS.readFileSync(NodePath.join(repository, "fork-maintenance-report.json"), "utf8"),
     );
-    NodeAssert.equal(report.status, "partial-failure");
-    NodeAssert.equal(report.failures[0].channel, "nightly");
+    NodeAssert.equal(
+      report.status,
+      failed
+        ? "partial-failure"
+        : scenario === "new nightly"
+          ? "prepared-with-deferred"
+          : "prepared",
+    );
+    if (failed) {
+      NodeAssert.equal(report.failures[0].channel, "nightly");
+      if (scenario === "missing nightly")
+        NodeAssert.match(report.failures[0].error, /fetch|remote ref/);
+    } else {
+      NodeAssert.deepEqual(report.failures, []);
+    }
+    if (scenario === "new nightly") {
+      NodeAssert.deepEqual(report.deferred, [
+        {
+          channel: "nightly",
+          tag: newerTag,
+          source: newerSource,
+          reason: "not-ancestor-of-validated-fork",
+          fork,
+        },
+      ]);
+      NodeAssert.match(result.stdout, /Deferred.*20261113.2.*next synchronized run/);
+      const nightly = builds.find((build) => build.channel === "nightly");
+      NodeAssert.equal(nightly.upstream_tag, "v0.1.10-nightly.20261112.1");
+      NodeAssert.equal(run(["show", `${nightly.ref}:app.txt`]), "tagged source");
+      NodeAssert.equal(
+        JSON.parse(run(["show", `${nightly.ref}:.fork/build.json`])).upstreamSha,
+        source,
+      );
+      NodeAssert.equal(
+        run(["rev-parse", `${nightly.ref}:.github/workflows`]),
+        run(["rev-parse", `${fork}:.github/workflows`]),
+      );
+      const pages = [
+        [
+          releases[0],
+          releases[1],
+          ...Array.from({ length: 98 }, () => ({
+            tag_name: "preview",
+            published_at: "2026-11-13",
+          })),
+        ],
+        [releases[2]],
+      ];
+      const paginated = await selectValidatedReleases({
+        fork,
+        run,
+        request: async (path) => {
+          const page = Number(new URL(`https://example.invalid/${path}`).searchParams.get("page"));
+          if (page === 2) run(["tag", "-f", "v0.1.9", newerSource], origin);
+          return pages[page - 1];
+        },
+      });
+      NodeAssert.deepEqual(paginated.deferred, report.deferred);
+      NodeAssert.deepEqual(paginated.failures, []);
+      NodeAssert.deepEqual(
+        paginated.selected.map(({ channel, source }) => ({ channel, source })),
+        [
+          { channel: "stable", source },
+          { channel: "nightly", source },
+        ],
+      );
+      // A later page must not refetch a tag that moved after its SHA was frozen.
+      NodeAssert.equal(run(["rev-parse", "refs/tags/v0.1.9"], origin), newerSource);
+      run(["merge", "--no-edit", newerSource]);
+      const nextRun = await selectValidatedReleases({
+        fork: run(["rev-parse", "HEAD"]),
+        run,
+        request: async () => releases,
+      });
+      NodeAssert.deepEqual(nextRun.deferred, []);
+      NodeAssert.deepEqual(nextRun.failures, []);
+      NodeAssert.equal(
+        nextRun.selected.find((release) => release.channel === "nightly").source,
+        newerSource,
+      );
+      NodeAssert.equal(
+        nextRun.selected.find((release) => release.channel === "nightly").tag_name,
+        newerTag,
+      );
+    } else NodeAssert.deepEqual(report.deferred, []);
   } finally {
     NodeFS.rmSync(directory, { recursive: true, force: true });
   }
-});
+}
+
+for (const scenario of [
+  "wrong provenance",
+  "normal",
+  "new nightly",
+  "missing nightly",
+  "missing inventory",
+]) {
+  NodeTest.test(`prepare release selection: ${scenario}`, () => prepareSelectionTest(scenario));
+}
+
+NodeTest.test(
+  "release selection never treats Git errors or exhausted pages as a complete inventory",
+  async () => {
+    const stable = { tag_name: "v0.1.9", published_at: "2026-11-12" };
+    const nightly = { tag_name: "v0.1.10-nightly.20261113.2", published_at: "2026-11-13" };
+    const fork = "a".repeat(40);
+    const source = "b".repeat(40);
+    const run = (args) => {
+      if (args[0] === "rev-parse") return source;
+      if (args[0] === "merge-base")
+        throw Object.assign(new Error("corrupt object database"), { status: 128 });
+      return "";
+    };
+    const broken = await selectValidatedReleases({
+      fork,
+      run,
+      request: async () => [stable, nightly],
+    });
+    NodeAssert.deepEqual(broken.selected, []);
+    NodeAssert.deepEqual(broken.deferred, []);
+    NodeAssert.equal(broken.failures.length, 2);
+    NodeAssert.ok(broken.failures.every(({ error }) => error.includes("corrupt object database")));
+    const nonAncestor = (args) => {
+      if (args[0] === "merge-base")
+        throw Object.assign(new Error("not an ancestor"), { status: 1 });
+      return run(args);
+    };
+    const noAncestor = await selectValidatedReleases({
+      fork,
+      run: nonAncestor,
+      request: async () => [stable, nightly],
+    });
+    NodeAssert.deepEqual(noAncestor.selected, []);
+    NodeAssert.equal(noAncestor.deferred.length, 2);
+    NodeAssert.equal(noAncestor.failures.length, 2);
+    await NodeAssert.rejects(
+      selectValidatedReleases({
+        fork,
+        run: nonAncestor,
+        request: async () => [
+          stable,
+          nightly,
+          ...Array.from({ length: 98 }, () => ({
+            tag_name: "preview",
+            published_at: "2026-11-13",
+          })),
+        ],
+      }),
+      /Incomplete published release inventory.*page limit/,
+    );
+    await NodeAssert.rejects(
+      selectValidatedReleases({ fork, run, request: async () => ({}) }),
+      /Incomplete published release inventory/,
+    );
+  },
+);

@@ -367,9 +367,23 @@ function launcherFixture() {
     import path from 'node:path';
     const args = process.argv.slice(2);
     fs.writeFileSync(path.join(process.env.RECORDS, process.pid + '.json'), JSON.stringify({ args, cwd: process.cwd() }));
+    if (args[0] === 'lint' && process.env.ACK_FILE) {
+      const watcher = fs.watch(process.env.RECORDS, () => {
+        if (fs.existsSync(process.env.ACK_FILE)) {
+          watcher.close();
+          process.exit(0);
+        }
+      });
+    }
     console.log('fixture stdout: ' + args[0]);
     console.error('fixture stderr: ' + args[0]);
-    process.exit(args[0] === process.env.FAIL_STEP ? 23 : 0);
+    if (args[0] === process.env.HANG_STEP) {
+      const { MessageChannel } = await import('node:worker_threads');
+      const { port1 } = new MessageChannel();
+      port1.on('message', () => {});
+    } else if (!(args[0] === 'lint' && process.env.ACK_FILE)) {
+      process.exit(args[0] === process.env.FAIL_STEP ? 23 : 0);
+    }
   `,
   );
   // Select the Windows launcher without changing the Effect runtime's host platform.
@@ -412,12 +426,22 @@ function launcherFixture() {
     root,
     source,
     write,
-    run(failStep = "") {
-      return NodeChildProcess.spawnSync(process.execPath, ["scripts/check-changed.ts", "HEAD"], {
-        cwd: root,
-        encoding: "utf8",
-        env: { ...env, TEMP: NodeOS.tmpdir(), RECORDS: records, FAIL_STEP: failStep },
-      });
+    run(failStep = "", args: Array<string> = [], hangStep = "") {
+      return NodeChildProcess.spawnSync(
+        process.execPath,
+        ["scripts/check-changed.ts", "HEAD", ...args],
+        {
+          cwd: root,
+          encoding: "utf8",
+          env: {
+            ...env,
+            TEMP: NodeOS.tmpdir(),
+            RECORDS: records,
+            FAIL_STEP: failStep,
+            HANG_STEP: hangStep,
+          },
+        },
+      );
     },
     calls: (): Array<{ args: Array<string>; cwd: string }> =>
       NodeFS.readdirSync(records).map((file) =>
@@ -486,4 +510,56 @@ it.each(["install", "lint"])("reports a failing %s step with its output", (step)
   expect(
     NodeFS.existsSync(NodePath.join(project.root, "node_modules/.cache/check-changed.json")),
   ).toBe(false);
+});
+
+it.each([1, 2])(
+  "keeps partial diagnostics when a check times out at concurrency %s",
+  (concurrency) => {
+    using project = launcherFixture();
+    project.write(project.source, "export const value = 2;\n");
+    const result = project.run(
+      "",
+      ["--timeout", "2", "--concurrency", String(concurrency)],
+      "lint",
+    );
+    expect(result.status, result.stdout + result.stderr).toBe(1);
+    expect(result.stdout).toContain("> vp lint  running");
+    expect(result.stdout).toContain("TIMEOUT  lint  killed after 2s");
+    expect(result.stdout).toContain("fixture stdout: lint");
+    expect(result.stdout).toContain("fixture stderr: lint");
+    expect(result.stdout.match(/fixture stdout: lint/g)).toHaveLength(1);
+    expect(
+      NodeFS.existsSync(NodePath.join(project.root, "node_modules/.cache/check-changed.json")),
+    ).toBe(false);
+  },
+);
+
+it("streams a sequential check's output before it exits", async () => {
+  using project = launcherFixture();
+  project.write(project.source, "export const value = 2;\n");
+  const records = NodePath.join(project.root, "records");
+  const ackFile = NodePath.join(records, "output-ack");
+  const child = NodeChildProcess.spawn(
+    process.execPath,
+    ["scripts/check-changed.ts", "HEAD", "--concurrency", "1", "--timeout", "2"],
+    {
+      cwd: project.root,
+      env: { ...env, TEMP: NodeOS.tmpdir(), RECORDS: records, ACK_FILE: ackFile },
+    },
+  );
+  let output = "";
+  child.stdout.on("data", (chunk) => {
+    output += chunk;
+    if (output.includes("fixture stdout: lint")) NodeFS.writeFileSync(ackFile, "received");
+  });
+  child.stderr.on("data", (chunk) => {
+    output += chunk;
+  });
+  const status = await new Promise<number | null>((resolve, reject) => {
+    child.once("error", reject);
+    child.once("close", resolve);
+  });
+  expect(status, output).toBe(0);
+  expect(output.match(/fixture stdout: lint/g)).toHaveLength(1);
+  expect(output).toContain("pass  lint");
 });

@@ -41,7 +41,8 @@ permissions:
   contents: write
 
 concurrency:
-  group: fork-release-${{ inputs.channel }}
+  group: fork-build-${{ inputs.channel }}
+  queue: max
   cancel-in-progress: false
 
 jobs:

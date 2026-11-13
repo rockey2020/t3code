@@ -72,3 +72,15 @@ NodeTest.test(
     );
   },
 );
+
+NodeTest.test(
+  "release migration shares the legacy channel lock without evicting pending runs",
+  () => {
+    const legacy = read("fork-desktop.yml").match(/^concurrency:\n([\s\S]*?)\n\njobs:/m)[1];
+    const release = read("fork-release.yml").match(/^concurrency:\n([\s\S]*?)\n\njobs:/m)[1];
+    NodeAssert.equal(release.match(/^  group: (.+)$/m)[1], legacy.match(/^  group: (.+)$/m)[1]);
+    NodeAssert.match(release, /^  queue: max$/m);
+    NodeAssert.match(release, /^  cancel-in-progress: false$/m);
+    NodeAssert.doesNotMatch(read("fork-maintenance.yml"), /queue: max/);
+  },
+);

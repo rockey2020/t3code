@@ -4,6 +4,7 @@ import { translate, type Locale } from "../../i18n/locale";
 export const deviceUiMessages = {
   "This browser cannot decode {codec}.": "此浏览器无法解码 {codec}。",
   "Video decoder: {error}": "视频解码器：{error}",
+  "Device lease ended: {reason}": "设备租用已结束：{reason}",
   "This browser cannot decode this device's {codec} stream.":
     "此浏览器无法解码此设备的 {codec} 视频流。",
   "This browser cannot decode the Duo panel's {codec} stream.":
@@ -248,6 +249,7 @@ export const deviceUiMessages = {
 const translateStreamLabel = createLabelTranslator(deviceUiMessages, [
   "This browser cannot decode {codec}.",
   "Video decoder: {error}",
+  "Device lease ended: {reason}",
   "This browser cannot decode this device's {codec} stream.",
   "This browser cannot decode the Duo panel's {codec} stream.",
   "Device stream offer failed ({status}). Retrying…",

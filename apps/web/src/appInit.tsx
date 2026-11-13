@@ -14,6 +14,7 @@ import { startElectronBrowserHost } from "./browser/ElectronBrowserHost";
 import { startBrowserProfileReporting } from "./browser/BrowserProfileReporter";
 import { startPreviewTitleRecording } from "./browserHistoryStore";
 import { retainThreadOverlaysForThread } from "./components/chat/threadOverlayRetention";
+import { resolveWindowTitleThreadStatus } from "./components/Sidebar.logic";
 import { startBackgroundThreadAnnouncements } from "./components/BackgroundThreadAnnouncer";
 import { startSshPasswordPromptQueue } from "./components/desktop/SshPasswordPromptDialog";
 import { startHostFreezeToasts } from "./components/HostFreezeToastCoordinator";
@@ -58,7 +59,10 @@ import { primaryServerConfigAtom } from "./state/server";
 import { environmentShell } from "./state/shell";
 import { installChatRouteCommands } from "./shortcuts/chatRouteCommands";
 import { startWorkspaceFocus } from "./lib/workspaceFocus";
-import { startI18n } from "./i18n/runtime";
+import { startI18n, subscribeI18n } from "./i18n/runtime";
+import { createLabelTranslator } from "./i18n/labelTranslation";
+import { translateNow } from "./i18n/useTranslation";
+import { globalUiMessages } from "./components/globalUi.messages";
 import { installCommandPaletteCommands } from "./shortcuts/commandPaletteCommands";
 import { registerOpenFavoriteEditorCommand } from "./components/chat/OpenInPickerShortcut";
 import { environmentThreadShells, threadEnvironment } from "./state/threads";
@@ -133,8 +137,16 @@ function readOpenThreadRef(router: AppRouter): ScopedThreadRef | null {
   return resolveActiveThreadRouteRef(target, draft);
 }
 
-/** Names the open thread and its project in the window title, or the app when none is open. */
+/**
+ * Names the open thread and its project in the window title, or the app when none is open.
+ * Screen readers read it on Alt+Tab, so it can lead with the thread and what it's doing.
+ */
 function startDocumentTitle(router: AppRouter): void {
+  const translateStatus = createLabelTranslator(globalUiMessages, [
+    "Working",
+    "Needs approval",
+    "Needs your input",
+  ]);
   const readOnGuestPage = () => router.state.matches.some((match) => match.routeId === "/guest");
   let openThreadRef = readOpenThreadRef(router);
   let onGuestPage = readOnGuestPage();
@@ -153,6 +165,7 @@ function startDocumentTitle(router: AppRouter): void {
               scopeProjectRef(thread.environmentId, thread.projectId),
             ),
           );
+    const status = thread === null ? null : resolveWindowTitleThreadStatus(thread);
     const title = resolveWindowTitle({
       appDisplayName: resolveServerBackedAppDisplayName({
         baseName: APP_BASE_NAME,
@@ -163,6 +176,14 @@ function startDocumentTitle(router: AppRouter): void {
       }),
       projectTitle: project?.title ?? null,
       threadTitle: thread?.title ?? null,
+      ...(getClientSettings().screenReaderWindowTitle && {
+        screenReader: {
+          threadStatus:
+            status === null
+              ? null
+              : translateStatus(status, (key) => translateNow(globalUiMessages, key)),
+        },
+      }),
       desktop: isElectron,
     });
     // Projects change whenever any project does; most changes leave the title alone.
@@ -198,6 +219,8 @@ function startDocumentTitle(router: AppRouter): void {
   watchOpenThread();
   appAtomRegistry.subscribe(primaryServerConfigAtom, write, { immediate: true });
   appAtomRegistry.subscribe(environmentProjects.projectsAtom, write);
+  subscribeClientSettings(write);
+  subscribeI18n(write);
   router.subscribe("onResolved", updateOpenThread);
   useComposerDraftStore.subscribe(updateOpenThread);
 }

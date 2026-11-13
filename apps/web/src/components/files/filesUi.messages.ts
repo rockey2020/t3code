@@ -2,6 +2,8 @@ import { translate, type Locale } from "~/i18n/locale";
 
 export const filesUiMessages = {
   "File contents": "文件内容",
+  "Resizing preview...": "正在调整预览大小…",
+  "This row or column could not be resized.": "无法调整此行或列的大小。",
 
   "This sheet is empty.": "此工作表为空。",
   "Preview limited to 250,000 rows, 1,024 columns, and bounded cell text.":

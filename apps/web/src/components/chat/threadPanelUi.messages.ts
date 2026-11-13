@@ -1,4 +1,7 @@
 export const threadPanelUiMessages = {
+  "Preparing fix": "正在准备修复",
+  "Could not open the parent thread": "无法打开父会话",
+  "The parent thread was deleted": "父会话已被删除",
   "Resolve the conflicts in this thread": "在此会话中解决冲突",
   "Fix the failing checks in this thread": "在此会话中修复失败的检查",
   "Added to the composer": "已添加到输入框",

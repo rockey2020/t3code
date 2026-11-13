@@ -2,6 +2,16 @@ import type { Locale } from "~/i18n/locale";
 import { translateThemeErrorMessage } from "./themeErrorMessages";
 
 export const settingsShellMessages = {
+  "in@@settings-scope":
+    "位于",
+  "Checkout scope":
+    "工作副本范围",
+  "Unavailable checkout":
+    "工作副本不可用",
+  "All checkouts":
+    "所有工作副本",
+  "Search checkouts":
+    "搜索工作副本",
   Advanced: "高级",
   "Applying settings for {projects} across {environments}":
     "正在为{environments}中的{projects}应用设置",

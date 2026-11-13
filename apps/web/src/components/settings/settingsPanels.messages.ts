@@ -1,6 +1,13 @@
 import { translate, type Locale } from "../../i18n/locale";
 
 export const settingsPanelsMessages = {
+  "Keep awake while agents work":
+    "智能体工作时保持唤醒",
+  "keep awake while agents work":
+    "智能体工作时保持唤醒",
+  "Stop the computer from going to sleep while agents are working, and let it sleep once they finish. Closing a laptop lid still puts it to sleep.":
+    "智能体工作时阻止电脑进入睡眠，工作结束后允许电脑睡眠。合上笔记本电脑屏幕仍会使其进入睡眠。",
+  "Screen reader": "屏幕阅读器",
   "Application update checks and automatic updates are disabled in this build.":
     "此版本已禁用应用更新检查和自动更新。",
   "Could not download update": "无法下载更新",

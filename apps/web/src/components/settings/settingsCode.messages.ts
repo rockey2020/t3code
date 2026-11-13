@@ -1,6 +1,12 @@
 import { translate, type Locale } from "~/i18n/locale";
 
 export const settingsCodeMessages = {
+  "Different actions across checkouts":
+    "不同工作副本的操作不一致",
+  "Narrow the selection above to one checkout to edit its list. Adding an action here adds it to every selected checkout.":
+    "请在上方缩小范围，选择一个工作副本来编辑其操作列表。在此处添加操作会将其添加到所有选中的工作副本。",
+  "Writer model not saved":
+    "写作模型未保存",
   "Offer {label} when adding or publishing a project": "添加或发布项目时提供 {label}",
   "Offer when adding or publishing a project": "添加或发布项目时提供此选项",
   "No actions configured.": "尚未配置操作。",

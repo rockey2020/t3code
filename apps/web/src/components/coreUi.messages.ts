@@ -1,4 +1,15 @@
 export const coreUiMessages = {
+  "No active threads in these projects": "这些项目中没有活跃会话",
+  "No active threads in {project}": "{project} 中没有活跃会话",
+  "Title generation failed.": "标题生成失败。",
+  "Failed to regenerate {failed} of {total} thread titles":
+    "{total} 个会话中有 {failed} 个标题重新生成失败",
+  "Title kept": "已保留标题",
+  "The current title already fits this thread.": "当前标题已适合此会话。",
+  "Titles kept": "已保留标题",
+  "Kept {kept} of {total} titles": "已保留 {total} 个标题中的 {kept} 个",
+  "The current titles already fit these threads.": "当前标题已适合这些会话。",
+  "Those titles already fit their threads.": "这些标题已适合对应的会话。",
   "Thread copied": "已复制会话",
   "Failed to copy thread": "无法复制会话",
   "PR link copied": "已复制 PR 链接",

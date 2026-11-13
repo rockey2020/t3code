@@ -75,6 +75,7 @@ import {
   AlertDialogTitle,
 } from "../ui/alert-dialog";
 import { Button } from "../ui/button";
+import { Spinner } from "../ui/spinner";
 import { toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import {
@@ -385,10 +386,15 @@ export function ThreadDetailsPrRow({
         : rowAction === "fix"
           ? {
               label: t("Fix"),
-              pendingLabel: t("Preparing..."),
+              pendingLabel: t("Fix"),
               pending: handoff === "findings",
               destructive: true,
-              suffix: newThreadSuffix,
+              suffix:
+                handoff === "findings" ? (
+                  <Spinner size="xs" aria-label={t("Preparing fix")} />
+                ) : (
+                  newThreadSuffix
+                ),
               tooltip:
                 composerTarget === undefined
                   ? t("Fix the failing checks in a new thread")
@@ -496,7 +502,7 @@ export function ThreadDetailsPrRow({
                 checksState={checksRollup}
                 checks={detail.checks}
                 variant="count"
-                render={<ThreadDetailsControl part="meta" />}
+                render={<ThreadDetailsControl part="meta" className="min-w-0 shrink" />}
               />
             ) : null}
             {watchControl("icon")}

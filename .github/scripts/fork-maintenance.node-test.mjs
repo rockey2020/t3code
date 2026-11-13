@@ -14,7 +14,71 @@ import {
   releaseDelta,
   commitPreparedSource,
   gitOutput,
+  buildOutputs,
+  validateBuildDescriptor,
+  assertWorkflowSnapshot,
 } from "./fork-maintenance.mjs";
+
+const stableBuild = () => ({
+  ref: "a".repeat(40),
+  version: "0.1.9",
+  tag: "v0.1.9-zh.0123456789ab",
+  channel: "stable",
+  upstream_tag: "v0.1.9",
+});
+
+NodeTest.test("empty preparation safely skips every release", () => {
+  NodeAssert.deepEqual(buildOutputs([]), { builds: "[]", has_builds: "false" });
+});
+
+NodeTest.test("partial preparation emits only validated successful channels", () => {
+  const build = stableBuild();
+  NodeAssert.deepEqual(buildOutputs([build]), {
+    builds: JSON.stringify([{ ...build, artifact_namespace: `stable-${build.ref}-` }]),
+    has_builds: "true",
+  });
+});
+
+NodeTest.test("build descriptors reject malformed identities and duplicate channels", () => {
+  for (const mutation of [
+    { ref: "main" },
+    { version: "0.1.8" },
+    { tag: "v0.1.9-zh.no" },
+    { channel: "nightly" },
+    { upstream_tag: "v0.1.9-rc.1" },
+    { ref: "a".repeat(40) + "\\nfoo=true" },
+    { artifact_namespace: "other-" },
+  ])
+    NodeAssert.throws(() => validateBuildDescriptor({ ...stableBuild(), ...mutation }));
+  NodeAssert.throws(() => buildOutputs([stableBuild(), stableBuild()]));
+  NodeAssert.throws(() => buildOutputs(null));
+});
+
+NodeTest.test("workflow snapshot equality is mandatory for immutable sources", () => {
+  const calls = [];
+  const source = "a".repeat(40),
+    workflow = "b".repeat(40),
+    tree = "c".repeat(40);
+  const run = (args) => {
+    calls.push(args);
+    return tree;
+  };
+  assertWorkflowSnapshot({ run, source, workflow });
+  NodeAssert.deepEqual(calls, [
+    ["rev-parse", `${source}:.github/workflows`],
+    ["rev-parse", `${workflow}:.github/workflows`],
+  ]);
+  NodeAssert.throws(
+    () =>
+      assertWorkflowSnapshot({
+        run: ([, ref]) => (ref.startsWith(source) ? tree : "d".repeat(40)),
+        source,
+        workflow,
+      }),
+    /workflow snapshot/i,
+  );
+  NodeAssert.throws(() => assertWorkflowSnapshot({ run, source: "main", workflow }), /immutable/i);
+});
 
 NodeTest.test("binary diffs retain blank context lines so release patches remain valid", () => {
   const directory = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "fork-patch-context-"));
@@ -446,6 +510,132 @@ NodeTest.test("push validates its snapshot while scheduled and manual runs merge
       NodeAssert.equal(run(fork, "config", "user.name"), "github-actions[bot]");
       NodeAssert.equal(run(fork, "status", "--porcelain"), "");
     }
+  } finally {
+    NodeFS.rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+NodeTest.test("prepare failure retains validated outputs for the unaffected channel", () => {
+  const directory = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "fork-prepare-outputs-"));
+  const repository = NodePath.join(directory, "source");
+  const origin = NodePath.join(directory, "origin.git");
+  const run = (args, cwd = repository) =>
+    gitOutput(
+      args,
+      NodeChildProcess.execFileSync("git", args, {
+        cwd,
+        encoding: "utf8",
+        stdio: ["pipe", "pipe", "pipe"],
+      }),
+    );
+  try {
+    NodeFS.mkdirSync(repository);
+    run(["init", "--initial-branch=main"]);
+    run(["config", "user.name", "Test"]);
+    run(["config", "user.email", "test@example.invalid"]);
+    run(["config", "commit.gpgSign", "false"]);
+    NodeFS.writeFileSync(NodePath.join(repository, "app.txt"), "tagged source\n");
+    run(["add", "."]);
+    run(["commit", "-m", "upstream"]);
+    const source = run(["rev-parse", "HEAD"]);
+    run(["tag", "v0.1.9"]);
+    run(["tag", "v0.1.10-nightly.20261112.1"]);
+    for (const path of [".github/scripts", ".github/workflows", ".fork"])
+      NodeFS.mkdirSync(NodePath.join(repository, path), { recursive: true });
+    NodeFS.copyFileSync(
+      new URL("./fork-maintenance.mjs", import.meta.url),
+      NodePath.join(repository, ".github/scripts/fork-maintenance.mjs"),
+    );
+    NodeFS.writeFileSync(
+      NodePath.join(repository, ".github/workflows/fork-maintenance.yml"),
+      "name: fixture\n",
+    );
+    NodeFS.writeFileSync(
+      NodePath.join(repository, ".fork/config.json"),
+      JSON.stringify({
+        repository: "fixture/fork",
+        repositoryId: 123,
+        upstream: "fixture/upstream",
+        branch: "main",
+      }),
+    );
+    NodeFS.writeFileSync(
+      NodePath.join(repository, ".fork/upstream.json"),
+      JSON.stringify({ sha: source }),
+    );
+    run(["add", "."]);
+    run(["commit", "-m", "fork"]);
+    const fork = run(["rev-parse", "HEAD"]);
+    const { fingerprint } = releaseDelta(run, source, fork);
+    run(["clone", "--bare", repository, origin], directory);
+    run(["remote", "add", "origin", origin]);
+    run(["remote", "add", "upstream", origin]);
+    for (const [channel, tag] of [
+      ["stable", "v0.1.9"],
+      ["nightly", "v0.1.10-nightly.20261112.1"],
+    ]) {
+      run(["checkout", "-b", `fork-build/${tag}-${fingerprint}`, fork]);
+      NodeFS.writeFileSync(
+        NodePath.join(repository, ".fork/build.json"),
+        JSON.stringify({
+          upstreamSha: source,
+          fingerprint,
+          upstreamTag: tag,
+          channel: channel === "stable" ? channel : "wrong",
+        }),
+      );
+      run(["add", "."]);
+      run(["commit", "-m", `prepare ${channel}`]);
+      run(["push", "origin", "HEAD"]);
+    }
+    run(["checkout", "main"]);
+    const outputPath = NodePath.join(directory, "output");
+    const result = NodeChildProcess.spawnSync(
+      process.execPath,
+      [
+        "--input-type=module",
+        "--eval",
+        `
+      globalThis.fetch = async (url, options) => {
+        if (options.method && options.method !== 'GET') throw new Error('Unexpected mutation');
+        if (url === 'https://api.github.com/repos/fixture/fork') return Response.json({ id: 123 });
+        if (url === 'https://api.github.com/repos/fixture/upstream/releases?per_page=100&page=1') return Response.json([
+          { tag_name: 'v0.1.9', published_at: '2026-11-12T00:00:00Z' },
+          { tag_name: 'v0.1.10-nightly.20261112.1', published_at: '2026-11-12T01:00:00Z', prerelease: true }
+        ]);
+        throw new Error('Unexpected API path: ' + url);
+      };
+      process.argv = [process.execPath, process.cwd() + '/.github/scripts/fork-maintenance.mjs', 'prepare'];
+      await import(process.argv[1]);
+    `,
+      ],
+      {
+        cwd: repository,
+        encoding: "utf8",
+        env: { ...process.env, GITHUB_REPOSITORY: "fixture/fork", GITHUB_OUTPUT: outputPath },
+      },
+    );
+    NodeAssert.equal(result.status, 1);
+    NodeAssert.match(result.stderr, /unaffected builds are available/);
+    const outputs = Object.fromEntries(
+      NodeFS.readFileSync(outputPath, "utf8")
+        .trim()
+        .split("\n")
+        .map((line) => {
+          const index = line.indexOf("=");
+          return [line.slice(0, index), line.slice(index + 1)];
+        }),
+    );
+    NodeAssert.equal(outputs.has_builds, "true");
+    const builds = JSON.parse(outputs.builds);
+    NodeAssert.equal(builds.length, 1);
+    NodeAssert.equal(builds[0].channel, "stable");
+    NodeAssert.equal(builds[0].artifact_namespace, `stable-${builds[0].ref}-`);
+    const report = JSON.parse(
+      NodeFS.readFileSync(NodePath.join(repository, "fork-maintenance-report.json"), "utf8"),
+    );
+    NodeAssert.equal(report.status, "partial-failure");
+    NodeAssert.equal(report.failures[0].channel, "nightly");
   } finally {
     NodeFS.rmSync(directory, { recursive: true, force: true });
   }

@@ -295,17 +295,19 @@ export function ServerUpdateAction({
   const canUpdate = useAtomValue(sessionStateAtom, canUpdateServer);
   const updatesDenial = managedUpdatesDenial(useManagedPolicy(environmentId));
   const update = useServerUpdate();
+  const updatesInstall =
+    installation?.kind === "npm-global" || installation?.kind === "t3-launcher";
   const { copyToClipboard } = useCopyToClipboard<{ command: string }>({
-    target: installation?.kind === "npm-global" ? "update command" : "relaunch command",
+    target: updatesInstall ? "update command" : "relaunch command",
     onCopy: ({ command }) => {
       toastManager.add({
         type: "success",
         title:
-          installation?.kind === "npm-global"
+          updatesInstall
             ? translateNow(globalUiMessages, "Update command copied")
             : translateNow(globalUiMessages, "Relaunch command copied"),
         description:
-          installation?.kind === "npm-global"
+          updatesInstall
             ? translateNow(
                 globalUiMessages,
                 "Run `{command}` on {server}, then restart t3 with your usual options.",
@@ -389,7 +391,7 @@ export function ServerUpdateAction({
     selfUpdate === null ? manualServerUpdateCommand(targetVersion, installation) : null;
   const actionLabel =
     manualCommand !== null
-      ? installation?.kind === "npm-global"
+      ? updatesInstall
         ? t("Copy update command")
         : t("Copy relaunch command")
       : (label ?? t("Update"));

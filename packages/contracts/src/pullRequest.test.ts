@@ -104,7 +104,7 @@ describe("PullRequestCapabilities", () => {
       capabilities: {
         ...base,
         actions: options.actions,
-        mergeMethods: ["squash", "semi-linear", "merge"],
+        mergeMethods: ["squash", "fast-forward", "merge"],
         updateMethods: options.updateMethods,
         review: { ...base.review, verdicts: options.verdicts },
       },

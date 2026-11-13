@@ -53,4 +53,3 @@ node_modules/
 # Fork maintenance reports are CI artifacts, not source changes.
 /fork-dependency-report.json
 /fork-maintenance-report.json
-/packages/ssh/.ssh-launcher-test-*/

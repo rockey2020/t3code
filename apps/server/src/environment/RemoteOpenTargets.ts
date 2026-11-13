@@ -33,30 +33,23 @@ export const make = Effect.gen(function* () {
     );
     const username = yield* HostProcess.Username;
 
-    const tailscaleStatus = yield* readTailscaleStatus.pipe(
+    const magicDnsName = yield* readTailscaleStatus.pipe(
+      Effect.map((status) => status.magicDnsName),
       Effect.orElseSucceed(() => null),
       Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
     );
-    const magicDnsName =
-      tailscaleStatus?.running === false ? null : (tailscaleStatus?.magicDnsName ?? null);
 
     const targets: Array<RemoteOpenTarget> = [];
 
     if (!sshdListening) {
-      // sshd may listen only on the tailnet address (ListenAddress), and Tailscale SSH
-      // needs no local sshd; tailscaled alone does not prove an SSH route.
-      if (magicDnsName === null) return targets;
-      const tailnetSshdListening = yield* Effect.forEach(
-        tailscaleStatus?.tailnetIpv4Addresses ?? [],
-        (address) => net.hasListenerOnHost(SSH_PORT, address),
-      ).pipe(Effect.map((listening) => listening.includes(true)));
-      const sshRoute =
-        tailnetSshdListening ||
+      // Tailscale SSH needs no local sshd; tailscaled alone does not prove an SSH route.
+      if (
+        magicDnsName !== null &&
         (yield* readTailscaleSshEnabled.pipe(
           Effect.orElseSucceed(() => false),
           Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
-        ));
-      if (sshRoute) {
+        ))
+      ) {
         targets.push({
           kind: "tailscale",
           host: magicDnsName,

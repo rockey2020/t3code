@@ -38,11 +38,11 @@ export const websiteJsonLd = (): JsonLd => ({
   publisher: { "@id": ORGANIZATION_ID },
 });
 
-export const softwareJsonLd = (description: string): JsonLd => ({
+export const softwareJsonLd = (): JsonLd => ({
   "@type": "SoftwareApplication",
   "@id": SOFTWARE_ID,
   name: SITE_NAME,
-  description,
+  description: `${SITE_NAME}. ${SITE_TAGLINE}.`,
   url: SITE_ORIGIN,
   downloadUrl: absoluteUrl("/download"),
   applicationCategory: "DeveloperApplication",

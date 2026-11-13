@@ -104,14 +104,11 @@ export const layer: Layer.Layer<
             Option.isSome(targetAdapter) &&
             Option.isSome(currentInstance) &&
             (currentSession !== undefined || currentProviderThread !== undefined)
-              ? negotiatedCapabilities === undefined
-                ? // No session record left to switch in place; the next session starts with it.
-                  ({ type: "apply_on_next_turn" } as const)
-                : yield* targetAdapter.value.planSelectionTransition({
-                    current,
-                    target: targetModelSelection,
-                    sessionCapabilities: negotiatedCapabilities,
-                  })
+              ? yield* targetAdapter.value.planSelectionTransition({
+                  current,
+                  target: targetModelSelection,
+                  sessionCapabilities: negotiatedCapabilities ?? currentInstance.value.capabilities,
+                })
               : undefined;
           const transition =
             Option.isNone(targetInstance) || Option.isNone(targetAdapter)

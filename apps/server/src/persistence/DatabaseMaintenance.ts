@@ -28,17 +28,9 @@ export class DatabaseMissingError extends Schema.TaggedError<DatabaseMissingErro
 
 export class DatabaseInUseError extends Schema.TaggedError<DatabaseInUseError>()(
   "DatabaseInUseError",
-  {
-    path: Schema.String,
-    cause: Schema.Defect(),
-    pid: Schema.optional(Schema.Int),
-    serviceManaged: Schema.optional(Schema.Boolean),
-  },
+  { path: Schema.String, cause: Schema.Defect() },
 ) {
   override get message() {
-    if (this.pid !== undefined) {
-      return `Stop T3 Code server process ${this.pid}${this.serviceManaged ? "" : ", which the background service did not start,"} before repairing the database.`;
-    }
     return "Stop the T3 Code server and desktop app, including any version before 0.1.0, before repairing the database.";
   }
 }
@@ -79,8 +71,6 @@ export class DiskSpaceCheckError extends Schema.TaggedError<DiskSpaceCheckError>
   }
 }
 
-export type DatabaseCompactStep = "prune-events" | "vacuum" | "rebuild-search" | "checkpoint";
-
 export class DatabaseMaintenance extends Context.Service<
   DatabaseMaintenance,
   {
@@ -94,14 +84,8 @@ export class DatabaseMaintenance extends Context.Service<
       },
       DatabaseMissingError | DatabaseInspectError
     >;
-    /**
-     * Compacts history, then VACUUMs into incremental auto_vacuum. Refuses while a server has it open.
-     * Calls `onStep` as each step starts; VACUUM time grows with the whole database size.
-     */
-    readonly compact: (
-      databasePath: string,
-      onStep?: (step: DatabaseCompactStep) => Effect.Effect<void>,
-    ) => Effect.Effect<
+    /** Compacts history, then VACUUMs into incremental auto_vacuum. Refuses while a server has it open. */
+    readonly compact: (databasePath: string) => Effect.Effect<
       {
         readonly beforeBytes: number;
         readonly afterBytes: number;
@@ -187,25 +171,18 @@ const make = Effect.gen(function* () {
   );
 
   const compact = Effect.fn("DatabaseMaintenance.compact")(
-    function* (
-      databasePath: string,
-      onStep: (step: DatabaseCompactStep) => Effect.Effect<void> = () => Effect.void,
-    ) {
+    function* (databasePath: string) {
       yield* locate(databasePath);
       const beforeBytes = Number((yield* fs.stat(databasePath)).size);
       const result = yield* Effect.gen(function* () {
         const sql = yield* SqlClient.SqlClient;
         yield* lockExclusively(databasePath);
         const maintenance = yield* ProjectionMaintenance.ProjectionMaintenanceV2;
-        yield* onStep("prune-events");
         const summary = yield* maintenance.pruneEventStore();
-        yield* onStep("vacuum");
         // VACUUM is required to enable incremental auto_vacuum on existing databases.
         yield* sql`PRAGMA auto_vacuum = INCREMENTAL`;
         yield* sql`VACUUM`;
-        yield* onStep("rebuild-search");
         yield* rebuildMessageSearch(sql);
-        yield* onStep("checkpoint");
         yield* sql`PRAGMA wal_checkpoint(TRUNCATE)`;
         return summary;
       }).pipe(

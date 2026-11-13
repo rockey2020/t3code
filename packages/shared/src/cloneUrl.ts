@@ -7,28 +7,16 @@ const SCP_LIKE_URL = /^(?:[^@/\s]+@)?(\[[^\]@/\s]+\]|[^:/\s[\]]+):(?!\/)(.+)$/;
 const SSH_URL = /^ssh:\/\/(?:[^/\s]*@)?(\[[^\]@/\s]+\]|[^@:/\s]+)(:\d+)?\/(.+)$/;
 const HTTPS_URL = /^https?:\/\/(?:[^/\s]*@)?(\[[^\]@/\s]+\]|[^@:/\s]+)(:\d+)?\/(.+)$/;
 
-function parseCloneUrl(url: string): {
-  protocol: CloneProtocol;
-  host: string;
-  path: string;
-  customPort: boolean;
-  scp: boolean;
-} | null {
+function parseCloneUrl(
+  url: string,
+): { protocol: CloneProtocol; host: string; path: string; customPort: boolean } | null {
   const trimmed = url.trim();
   const ssh = SSH_URL.exec(trimmed);
-  if (ssh)
-    return { protocol: "ssh", host: ssh[1]!, path: ssh[3]!, customPort: !!ssh[2], scp: false };
+  if (ssh) return { protocol: "ssh", host: ssh[1]!, path: ssh[3]!, customPort: !!ssh[2] };
   const https = HTTPS_URL.exec(trimmed);
-  if (https)
-    return {
-      protocol: "https",
-      host: https[1]!,
-      path: https[3]!,
-      customPort: !!https[2],
-      scp: false,
-    };
+  if (https) return { protocol: "https", host: https[1]!, path: https[3]!, customPort: !!https[2] };
   const scp = SCP_LIKE_URL.exec(trimmed);
-  if (scp) return { protocol: "ssh", host: scp[1]!, path: scp[2]!, customPort: false, scp: true };
+  if (scp) return { protocol: "ssh", host: scp[1]!, path: scp[2]!, customPort: false };
   return null;
 }
 
@@ -56,16 +44,9 @@ export function cloneUrlForProtocol(url: string, protocol: CloneProtocol): strin
     const azure = /^([^/?#]+)\/([^/?#]+)\/_git\/([^/?#]+)$/.exec(parsed.path);
     return azure ? `git@ssh.dev.azure.com:v3/${azure[1]}/${azure[2]}/${azure[3]}` : null;
   }
-  // SCP paths are literal; URI paths use percent escapes.
-  try {
-    if (protocol === "ssh") return `git@${parsed.host}:${decodeURIComponent(parsed.path)}`;
-    const path = parsed.scp
-      ? parsed.path.split("/").map(encodeURIComponent).join("/")
-      : parsed.path;
-    return `https://${parsed.host}/${path}`;
-  } catch {
-    return null;
-  }
+  return protocol === "ssh"
+    ? `git@${parsed.host}:${parsed.path}`
+    : `https://${parsed.host}/${parsed.path}`;
 }
 
 const UNSAFE_SEGMENT = /^\.{1,2}$|[\\:*?"<>|\p{Cc}]|[ .]$/u;

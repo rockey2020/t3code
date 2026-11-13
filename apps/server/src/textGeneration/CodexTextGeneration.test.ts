@@ -1,11 +1,11 @@
 import {
+  DEFAULT_TEXT_GENERATION_MODEL_BY_PROVIDER,
   ProjectId,
   ProviderDriverKind,
   type ModelSelection,
   type ServerProvider,
 } from "@t3tools/contracts";
 import type { ProviderInstance } from "@t3tools/provider-core/server/driver";
-import * as ProviderInstallationGate from "../provider/ProviderInstallationGate.ts";
 import * as ProviderInstanceRegistry from "../provider/ProviderInstanceRegistry.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as SourceControlProviderRegistry from "../sourceControl/SourceControlProviderRegistry.ts";
@@ -431,8 +431,8 @@ it.layer(layerCodexTextGenerationTest)("CodexTextGeneration", (it) => {
           subject: "Add important change",
           body: "",
         }),
-        launchArgs: "--strict-config --oss --local-provider ollama --listen off",
-        requireArg: "--strict-config --oss --local-provider ollama",
+        launchArgs: "--strict-config --listen off",
+        requireArg: "--strict-config",
         forbidArg: "--listen",
       },
       (textGeneration) =>
@@ -546,8 +546,6 @@ const PREFLIGHT_PRIMARY_STATES = [
   "not installed, fallback disabled for project",
   "signed out",
   "signed out, fallback failed",
-  "cannot generate text",
-  "model cannot generate text",
 ] as const;
 
 it.effect.each(PREFLIGHT_PRIMARY_STATES)("text generation preflight: %s", (primaryState) =>
@@ -559,11 +557,6 @@ it.effect.each(PREFLIGHT_PRIMARY_STATES)("text generation preflight: %s", (prima
       instanceId: primary,
       model: "chat-model",
       options: [{ id: "effort", value: "high" }],
-    };
-    const threadDefault = {
-      instanceId: fallback,
-      model: "z-ai/glm-5.3-flash",
-      options: [{ id: "thinking", value: false }],
     };
     const calls: ModelSelection[] = [];
     const instances: ProviderInstance[] = [primary, fallback].map((instanceId) => {
@@ -591,22 +584,6 @@ it.effect.each(PREFLIGHT_PRIMARY_STATES)("text generation preflight: %s", (prima
           : {}),
         ...(primaryState === "signed out, fallback failed" && instanceId === fallback
           ? { status: "error", auth: { status: "unknown" } }
-          : {}),
-        ...(primaryState === "cannot generate text" && instanceId === primary
-          ? { supportsTextGeneration: false }
-          : {}),
-        ...(primaryState === "model cannot generate text" && instanceId === primary
-          ? {
-              models: [
-                {
-                  slug: selection.model,
-                  name: selection.model,
-                  isCustom: false,
-                  supportsTextGeneration: false,
-                  capabilities: null,
-                },
-              ],
-            }
           : {}),
         ...(primaryState === "exhausted" && instanceId === primary
           ? {
@@ -649,12 +626,8 @@ it.effect.each(PREFLIGHT_PRIMARY_STATES)("text generation preflight: %s", (prima
           }),
           ServerSettings.layerTest({
             providerInstances: {
-              [fallback]: {
-                driver: ProviderDriverKind.make("claudeAgent"),
-                config: { customModels: [threadDefault.model] },
-              },
+              [fallback]: { driver: ProviderDriverKind.make("claudeAgent"), config: {} },
             },
-            defaultModelSelection: threadDefault,
             ...(primaryState === "not installed, fallback disabled for project"
               ? {
                   projectSettingsOverrides: {
@@ -667,7 +640,6 @@ it.effect.each(PREFLIGHT_PRIMARY_STATES)("text generation preflight: %s", (prima
           Layer.mock(SourceControlProviderRegistry.SourceControlProviderRegistry)({
             resolveLink: () => Effect.die("unused"),
           }),
-          ProviderInstallationGate.layer,
         ),
       ),
     );
@@ -686,7 +658,11 @@ it.effect.each(PREFLIGHT_PRIMARY_STATES)("text generation preflight: %s", (prima
       primaryState === "not installed, fallback disabled for project" ||
       primaryState === "signed out, fallback failed"
         ? selection
-        : threadDefault,
+        : {
+            instanceId: fallback,
+            model:
+              DEFAULT_TEXT_GENERATION_MODEL_BY_PROVIDER[ProviderDriverKind.make("claudeAgent")],
+          },
     ]);
   }),
 );
@@ -754,7 +730,6 @@ it.effect(
               Layer.mock(SourceControlProviderRegistry.SourceControlProviderRegistry)({
                 resolveLink: () => Effect.die("unused"),
               }),
-              ProviderInstallationGate.layer,
             ),
           ),
         );

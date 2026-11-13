@@ -7,7 +7,6 @@ import {
 import * as Context from "effect/Context";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
-import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
@@ -51,9 +50,6 @@ const make = Effect.gen(function* () {
   const scheduledTasks = yield* ScheduledTaskService.ScheduledTaskService;
   const random = yield* SecureRandom.SecureRandom;
   const path = yield* Path.Path;
-  const fileSystem = yield* FileSystem.FileSystem;
-  const realPath = (folder: string) =>
-    fileSystem.realPath(folder).pipe(Effect.orElseSucceed(() => folder));
 
   const fail = (reason: string) => (cause: unknown) =>
     new ScratchThreadPromotionError({ reason, cause });
@@ -80,7 +76,7 @@ const make = Effect.gen(function* () {
     if (
       folder === undefined ||
       scratchRoot === undefined ||
-      (yield* realPath(path.dirname(folder))) !== (yield* realPath(scratchRoot)) ||
+      path.dirname(folder) !== scratchRoot ||
       !(isScratch || alreadyPromoted)
     ) {
       return yield* new ScratchThreadPromotionError({

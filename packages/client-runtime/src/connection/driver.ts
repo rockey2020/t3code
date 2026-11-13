@@ -20,7 +20,6 @@ import {
   connectionRoutes,
   routeEntry,
   routeHttpBaseUrl,
-  routeKeepsItsHost,
   sendsTokenInClear,
   usableRoutes,
 } from "./routes.ts";
@@ -116,16 +115,16 @@ export const connectOverRoutes = Effect.fn("ConnectionDriver.connectOverRoutes")
     // An incompatible server is the same server on every route.
     if (result.failure.reason === "unsupported") return yield* result.failure;
   }
+  // A slow route that answered after the head start goes before one that is
+  // still dead, which can hold an attempt open far longer than its probe.
   const late = yield* Effect.forEach(silent, ({ index }) => Fiber.join(checks[index]!), {
     concurrency: "unbounded",
   });
-  const answeredLate = silent.filter((_, position) => late[position] !== "silent");
-  const stillSilent = silent.filter((_, position) => late[position] === "silent");
-  for (const { route } of [...answeredLate, ...stillSilent]) {
-    // A route still silent after its whole check can hold the attempt open far
-    // longer than the check did. Once another route failed in a way that
-    // retries, the retry reaches it sooner than waiting here would.
-    if (transient !== undefined && stillSilent.some((entry) => entry.route === route)) break;
+  const retry = [
+    ...silent.filter((_, position) => late[position] !== "silent"),
+    ...silent.filter((_, position) => late[position] === "silent"),
+  ];
+  for (const { route } of retry) {
     const result = yield* attempt(route);
     if (result._tag === "Success") return result.success;
     if (result.failure.reason === "unsupported") return yield* result.failure;
@@ -149,7 +148,7 @@ export const make = Effect.gen(function* () {
 
   // The descriptor is public, so this sends no credential to whatever
   // answers at a saved LAN address on a different network.
-  const checkDescriptor = (httpBaseUrl: string, environmentId: string, keepsItsHost: boolean) =>
+  const checkDescriptor = (httpBaseUrl: string, environmentId: string) =>
     fetchRemoteEnvironmentDescriptor({
       httpBaseUrl,
       timeoutMs: ROUTE_CHECK_TIMEOUT_MS,
@@ -157,9 +156,7 @@ export const make = Effect.gen(function* () {
       Effect.option,
       // The connect this check leads to skips its own read. Every answer, even a
       // failure, replaces what an older check remembered.
-      Effect.tap((descriptor) =>
-        remote.rememberCheckedDescriptor(httpBaseUrl, descriptor, keepsItsHost),
-      ),
+      Effect.tap((descriptor) => remote.rememberCheckedDescriptor(httpBaseUrl, descriptor)),
       Effect.map((descriptor): RouteCheck =>
         Option.exists(descriptor, (value) => value.environmentId === environmentId)
           ? "answered"
@@ -173,7 +170,7 @@ export const make = Effect.gen(function* () {
   const checkRoute = (entry: ConnectionCatalogEntry, route: ConnectionRoute) => {
     const httpBaseUrl = routeHttpBaseUrl(route);
     if (httpBaseUrl === null) return Effect.succeed<RouteCheck>("unchecked");
-    return checkDescriptor(httpBaseUrl, entry.target.environmentId, routeKeepsItsHost(route)).pipe(
+    return checkDescriptor(httpBaseUrl, entry.target.environmentId).pipe(
       Effect.withSpan("ConnectionDriver.checkRoute", {
         attributes: { "connection.target.kind": route.target._tag },
       }),
@@ -181,11 +178,7 @@ export const make = Effect.gen(function* () {
   };
 
   const checkHost = (prepared: PreparedConnection) =>
-    checkDescriptor(
-      prepared.httpBaseUrl,
-      prepared.environmentId,
-      prepared.httpBaseUrl.startsWith("https:"),
-    ).pipe(
+    checkDescriptor(prepared.httpBaseUrl, prepared.environmentId).pipe(
       Effect.withSpan("ConnectionDriver.checkHost", {
         attributes: { "connection.target.kind": prepared.target._tag },
       }),
@@ -206,7 +199,6 @@ export const make = Effect.gen(function* () {
       entry,
       (route) => checkRoute(entry, route),
       Effect.fnUntraced(function* (route) {
-        yield* reportProgress({ stage: "preparing" });
         const prepared = yield* resolver.prepare(routeEntry(entry, route));
         yield* reportProgress({ stage: "opening", prepared });
         const session = yield* sessions.connect(prepared);

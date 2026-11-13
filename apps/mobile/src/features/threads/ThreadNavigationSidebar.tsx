@@ -25,10 +25,8 @@ import { FLOATING_TABS } from "../layout/workspace/floating-workspace-tabs";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AppText as Text } from "../../components/ui/AppText";
-import { Button } from "../../components/ui/Button";
 import { scopedProjectKey, scopedThreadKey } from "../../lib/scopedEntities";
-import { useProjects } from "../../state/entities";
-import { steadyNavigationThreadShellsAtom } from "../../state/threads";
+import { useProjects, useNavigationThreadShells } from "../../state/entities";
 import { useThreadSearch } from "../../state/queries";
 import { useThreadListV2ShelfPreferences } from "./use-thread-list-v2-shelf-preferences";
 import { useThreadListNow } from "./use-thread-list-now";
@@ -122,7 +120,7 @@ function ThreadNavigationSidebarPane(props: ThreadNavigationSidebarProps) {
   const insets = useSafeAreaInsets();
   const { fabClearance, fabSize } = useAndroidControlSizing();
   const projects = useProjects();
-  const threads = useAtomValue(steadyNavigationThreadShellsAtom);
+  const threads = useNavigationThreadShells();
   const { environments: workspaceEnvironments, state: catalogState } = useWorkspaceState();
   const { savedConnectionsById } = useSavedRemoteConnections();
   const openSwipeableRef = useRef<SwipeableMethods | null>(null);
@@ -558,43 +556,26 @@ function ThreadNavigationSidebarPane(props: ThreadNavigationSidebarProps) {
       }}
     />
   );
-  const showAddEnvironment =
-    !catalogState.isLoadingConnections &&
-    !catalogState.hasReadyEnvironment &&
-    !catalogState.hasConnectingEnvironment;
   const listEmpty = (
-    <View>
-      <Text
-        className={
-          Platform.OS === "android"
-            ? "px-4 py-4 text-center text-sm text-drawer-foreground-muted"
-            : "px-2 py-4 text-sm text-drawer-foreground-muted"
-        }
-      >
-        {catalogState.isLoadingConnections
-          ? "Loading threads…"
-          : showAddEnvironment
-            ? "No environments connected"
-            : props.searchQuery.trim().length > 0
-              ? threadSearch.isPending
-                ? "Searching thread messages…"
-                : "No matching threads"
-              : selectedProjectScope !== null
-                ? `No threads in ${selectedProjectScope.title}`
-                : "No threads yet"}
-      </Text>
-      {showAddEnvironment ? (
-        <View className={Platform.OS === "android" ? "self-center" : "px-2"}>
-          <Button
-            tone="primary"
-            size="compact"
-            icon="plus"
-            label="Add environment"
-            onPress={props.onOpenEnvironmentSettings}
-          />
-        </View>
-      ) : null}
-    </View>
+    <Text
+      className={
+        Platform.OS === "android"
+          ? "px-4 py-4 text-center text-sm text-drawer-foreground-muted"
+          : "px-2 py-4 text-sm text-drawer-foreground-muted"
+      }
+    >
+      {catalogState.isLoadingConnections
+        ? "Loading threads…"
+        : Platform.OS === "android" && !catalogState.hasConnections
+          ? "No environments connected"
+          : props.searchQuery.trim().length > 0
+            ? threadSearch.isPending
+              ? "Searching thread messages…"
+              : "No matching threads"
+            : selectedProjectScope !== null
+              ? `No threads in ${selectedProjectScope.title}`
+              : "No threads yet"}
+    </Text>
   );
 
   if (Platform.OS === "ios") {

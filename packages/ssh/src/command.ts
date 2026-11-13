@@ -127,23 +127,12 @@ export function getLastNonEmptyOutputLine(stdout: string): string | null {
   );
 }
 
-interface SshCommandOutput {
-  stdout: string;
-  stderr: string;
-}
-
-// Appends as chunks arrive so a timeout can still report what was printed.
-const collectProcessOutput = <E>(
-  stream: Stream.Stream<Uint8Array, E>,
-  output: SshCommandOutput,
-  key: keyof SshCommandOutput,
-): Effect.Effect<void, E> =>
+const collectProcessOutput = <E>(stream: Stream.Stream<Uint8Array, E>): Effect.Effect<string, E> =>
   stream.pipe(
     Stream.decodeText(),
-    Stream.runForEach((chunk) =>
-      Effect.sync(() => {
-        output[key] += chunk;
-      }),
+    Stream.runFold(
+      () => "",
+      (acc, chunk) => acc + chunk,
     ),
   );
 
@@ -156,42 +145,6 @@ function redactSshErrorOutput(output: string, keepTail = false): string {
   return keepTail
     ? `[truncated]\n${redacted.slice(-MAX_SSH_ERROR_OUTPUT_LENGTH)}`
     : `${redacted.slice(0, MAX_SSH_ERROR_OUTPUT_LENGTH)}\n[truncated]`;
-}
-
-export function shellSingleQuote(value: string): string {
-  return `'${value.replaceAll("'", "'\\''")}'`;
-}
-
-const SAFE_SHELL_ARG = /^[\w@%+=:,./-]+$/u;
-
-// cmd.exe and PowerShell both read double quotes, but not POSIX single quotes.
-function terminalArg(value: string, platform: NodeJS.Platform): string {
-  if (SAFE_SHELL_ARG.test(value)) return value;
-  return platform === "win32" ? `"${value}"` : shellSingleQuote(value);
-}
-
-// ssh prints this for unknown and changed host keys when it cannot ask. The app
-// never answers host key prompts, so the user checks the fingerprint in a terminal.
-function hostKeyVerificationMessage(input: {
-  readonly target: DesktopSshEnvironmentTarget;
-  readonly hostSpec: string;
-  readonly stderr: string;
-  readonly platform: NodeJS.Platform;
-}): string | null {
-  const { target, hostSpec, stderr, platform } = input;
-  if (!stderr.includes("Host key verification failed")) return null;
-  const command = [
-    "ssh",
-    ...(target.port !== null ? ["-p", String(target.port)] : []),
-    ...(hostSpec.startsWith("-") ? ["--"] : []),
-    hostSpec,
-  ]
-    .map((arg) => terminalArg(arg, platform))
-    .join(" ");
-  const guidance = stderr.includes("REMOTE HOST IDENTIFICATION HAS CHANGED")
-    ? `The host key for ${hostSpec} has changed since it was trusted. Only if you expect this change, remove the old key with the \`ssh-keygen -R\` command in the output below, run \`${command}\` in a terminal, check that the new host key fingerprint is the one you expect, then try again.`
-    : `SSH could not verify the host key for ${hostSpec}. Run \`${command}\` in a terminal, check that the host key fingerprint is the one you expect, then try again.`;
-  return `${guidance}\n\n${stderr.trim()}`;
 }
 
 function normalizeSshErrorMessage(input: {
@@ -225,7 +178,6 @@ const runSshCommandInScope = Effect.fn("ssh/command.runSshCommand.inScope")(func
   target: DesktopSshEnvironmentTarget,
   input: RunSshCommandOptions,
   commandScope: Scope.Scope,
-  output: SshCommandOutput,
 ): Effect.fn.Return<
   SshCommandResult,
   SshCommandError | SshInvalidTargetError,
@@ -274,7 +226,6 @@ const runSshCommandInScope = Effect.fn("ssh/command.runSshCommand.inScope")(func
       ChildProcess.make(sshCommand, args, {
         env: environment,
         extendEnv: true,
-        forceKillAfter: "1 second",
         stdin: {
           stream: stdinStream(input.stdin),
           endOnDone: true,
@@ -298,10 +249,10 @@ const runSshCommandInScope = Effect.fn("ssh/command.runSshCommand.inScope")(func
       ),
     );
 
-  const [, , exitCode] = yield* Effect.all(
+  const [stdout, stderr, exitCode] = yield* Effect.all(
     [
-      collectProcessOutput(child.stdout, output, "stdout"),
-      collectProcessOutput(child.stderr, output, "stderr"),
+      collectProcessOutput(child.stdout),
+      collectProcessOutput(child.stderr),
       child.exitCode.pipe(Effect.map(Number)),
     ],
     { concurrency: "unbounded" },
@@ -319,7 +270,6 @@ const runSshCommandInScope = Effect.fn("ssh/command.runSshCommand.inScope")(func
     ),
   );
 
-  const { stdout, stderr } = output;
   if (exitCode !== 0) {
     const diagnosticStdout = redactSshErrorOutput(stdout, input.keepErrorOutputTail);
     yield* Effect.logWarning("ssh.command.failed", {
@@ -334,18 +284,11 @@ const runSshCommandInScope = Effect.fn("ssh/command.runSshCommand.inScope")(func
       exitCode,
       stdout: diagnosticStdout,
       stderr,
-      message:
-        hostKeyVerificationMessage({
-          target,
-          hostSpec,
-          stderr,
-          platform: yield* HostProcess.Platform,
-        }) ??
-        normalizeSshErrorMessage({
-          stdout: diagnosticStdout,
-          stderr,
-          fallbackMessage: `SSH command failed for ${hostSpec} (exit ${exitCode}).`,
-        }),
+      message: normalizeSshErrorMessage({
+        stdout: diagnosticStdout,
+        stderr,
+        fallbackMessage: `SSH command failed for ${hostSpec} (exit ${exitCode}).`,
+      }),
     });
   }
 
@@ -364,9 +307,8 @@ export const runSshCommand = Effect.fn("ssh/command.runSshCommand")(function* (
   SshCommandError | SshInvalidTargetError,
   ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path
 > {
-  const output: SshCommandOutput = { stdout: "", stderr: "" };
   return yield* Effect.scopedWith((commandScope) =>
-    runSshCommandInScope(target, input, commandScope, output),
+    runSshCommandInScope(target, input, commandScope),
   ).pipe(
     Effect.timeoutOption(Duration.millis(input.timeoutMs ?? DEFAULT_SSH_COMMAND_TIMEOUT_MS)),
     Effect.flatMap((result) =>
@@ -374,22 +316,17 @@ export const runSshCommand = Effect.fn("ssh/command.runSshCommand")(function* (
         onSome: Effect.succeed,
         // The enclosing operation owns the span for this inline handler.
         onNone: Effect.fnUntraced(function* () {
-          const diagnosticStdout = redactSshErrorOutput(output.stdout, input.keepErrorOutputTail);
-          const { stderr } = output;
           yield* Effect.logWarning("ssh.command.timedOut", {
             ...sshTargetLogFields(target),
             timeoutMs: input.timeoutMs ?? DEFAULT_SSH_COMMAND_TIMEOUT_MS,
             remoteCommandArgs: input.remoteCommandArgs ?? [],
             preHostArgs: input.preHostArgs ?? [],
             hasStdin: input.stdin !== undefined,
-            stdout: diagnosticStdout,
-            stderr,
           });
           return yield* new SshCommandError({
             command: ["ssh"],
             exitCode: null,
-            stdout: diagnosticStdout,
-            stderr,
+            stderr: "",
             message: `SSH command timed out after ${input.timeoutMs ?? DEFAULT_SSH_COMMAND_TIMEOUT_MS}ms.`,
           });
         }),

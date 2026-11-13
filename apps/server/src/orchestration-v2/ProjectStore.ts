@@ -32,7 +32,6 @@ export class ProjectStoreV2Error extends Schema.TaggedError<ProjectStoreV2Error>
 export const ProjectRow = Schema.Struct({
   projectId: ProjectId,
   title: Schema.String,
-  hasCustomTitle: Schema.Boolean,
   workspaceRoot: Schema.String,
   defaultModelSelection: Schema.NullOr(ModelSelection),
   defaultThreadEnvMode: Schema.NullOr(ThreadEnvMode),
@@ -51,7 +50,6 @@ export type ProjectRow = typeof ProjectRow.Type;
 const ProjectDbRow = Schema.Struct({
   ...ProjectRow.fields,
   defaultModelSelection: Schema.NullOr(Schema.fromJsonString(ModelSelection)),
-  hasCustomTitle: Schema.BooleanFromBit,
   autoPull: Schema.BooleanFromBit,
   projectIcon: Schema.NullOr(Schema.fromJsonString(StoredProjectIcon)),
   scripts: Schema.fromJsonString(Schema.Array(ProjectScript)),
@@ -61,7 +59,6 @@ function toShell(row: ProjectRow): OrchestrationProjectShell {
   return {
     id: row.projectId,
     title: row.title,
-    hasCustomTitle: row.hasCustomTitle,
     workspaceRoot: row.workspaceRoot,
     repositoryIdentity: null,
     defaultModelSelection: row.defaultModelSelection,
@@ -120,7 +117,6 @@ export const make = Effect.gen(function* () {
       SELECT
         project_id AS "projectId",
         title,
-        has_custom_title AS "hasCustomTitle",
         workspace_root AS "workspaceRoot",
         default_model_selection_json AS "defaultModelSelection",
         default_thread_env_mode AS "defaultThreadEnvMode",
@@ -153,7 +149,6 @@ export const make = Effect.gen(function* () {
           INSERT INTO projection_projects (
             project_id,
             title,
-            has_custom_title,
             workspace_root,
             default_model_selection_json,
             default_thread_env_mode,
@@ -170,7 +165,6 @@ export const make = Effect.gen(function* () {
           VALUES (
             ${encoded.projectId},
             ${encoded.title},
-            ${encoded.hasCustomTitle},
             ${encoded.workspaceRoot},
             ${encoded.defaultModelSelection},
             ${encoded.defaultThreadEnvMode},
@@ -186,12 +180,7 @@ export const make = Effect.gen(function* () {
           )
           ON CONFLICT (project_id)
           DO UPDATE SET
-            title = CASE
-              WHEN projection_projects.has_custom_title = 1 AND excluded.has_custom_title = 0
-                THEN projection_projects.title
-              ELSE excluded.title
-            END,
-            has_custom_title = MAX(projection_projects.has_custom_title, excluded.has_custom_title),
+            title = excluded.title,
             workspace_root = excluded.workspace_root,
             default_model_selection_json = excluded.default_model_selection_json,
             default_thread_env_mode = excluded.default_thread_env_mode,
@@ -242,7 +231,6 @@ export const make = Effect.gen(function* () {
         return yield* upsertRow({
           projectId: payload.projectId,
           title: payload.title,
-          hasCustomTitle: false,
           workspaceRoot: payload.workspaceRoot,
           defaultModelSelection: payload.defaultModelSelection,
           defaultThreadEnvMode: payload.defaultThreadEnvMode ?? null,
@@ -270,7 +258,7 @@ export const make = Effect.gen(function* () {
       const payload = event.payload;
       yield* upsertRow({
         ...row,
-        ...(payload.title === undefined ? {} : { title: payload.title, hasCustomTitle: true }),
+        ...(payload.title === undefined ? {} : { title: payload.title }),
         ...(payload.workspaceRoot === undefined ? {} : { workspaceRoot: payload.workspaceRoot }),
         ...(payload.defaultModelSelection === undefined
           ? {}

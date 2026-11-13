@@ -175,14 +175,15 @@ const make = Effect.gen(function* () {
 
   const resolveRelativePathWithinRoot: WorkspacePaths["Service"]["resolveRelativePathWithinRoot"] =
     Effect.fn("WorkspacePaths.resolveRelativePathWithinRoot")(function* (input) {
-      if (path.isAbsolute(input.relativePath)) {
+      const normalizedInputPath = input.relativePath.trim();
+      if (path.isAbsolute(normalizedInputPath)) {
         return yield* new WorkspacePathOutsideRootError({
           workspaceRoot: input.workspaceRoot,
           relativePath: input.relativePath,
         });
       }
 
-      const absolutePath = path.resolve(input.workspaceRoot, input.relativePath);
+      const absolutePath = path.resolve(input.workspaceRoot, normalizedInputPath);
       // Only the host separator becomes `/`: on POSIX `\` is a file name character.
       const relativeToRoot = path
         .relative(input.workspaceRoot, absolutePath)

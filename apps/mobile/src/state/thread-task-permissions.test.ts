@@ -38,8 +38,7 @@ const state = vi.hoisted(() => ({
   pendingRequests: { approvals: [], userInputs: [] } as PendingThreadRequests,
   enqueue: vi.fn(async () => undefined),
   freshPending: false,
-  compactModel: null as string | null,
-  compactDueAt: "",
+  compactDue: false,
   setFreshPending: vi.fn(),
   clearDraft: vi.fn(),
   approve: vi.fn(),
@@ -80,12 +79,8 @@ vi.mock("react", () => ({
 vi.mock("expo-crypto", () => ({ randomUUID: () => "uuid" }));
 vi.mock("@t3tools/client-runtime/state/context-window", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@t3tools/client-runtime/state/context-window")>()),
-  compactBeforeSendTokens: (input: { readonly selection: ModelSelection; readonly now: string }) =>
-    input.selection.model === state.compactModel && input.now >= state.compactDueAt
-      ? 248_000
-      : null,
+  shouldCompactBeforeSend: () => state.compactDue,
 }));
-vi.mock("../lib/clock", () => ({ useNowMinuteMs: () => 0 }));
 vi.mock("../lib/attachmentUpload", () => ({ prepareTurnAttachments: vi.fn() }));
 vi.mock("../lib/uuid", () => ({ uuidv4: () => "uuid" }));
 vi.mock("./queued-run-edit", () => ({
@@ -208,8 +203,7 @@ beforeEach(() => {
     runtimeMode: undefined,
   };
   state.freshPending = false;
-  state.compactModel = null;
-  state.compactDueAt = "";
+  state.compactDue = false;
   state.thread.latestRun = null;
   state.projection = null;
   state.serverConfig = {
@@ -294,7 +288,7 @@ describe("mobile task permissions", () => {
     expect(state.setFreshPending).toHaveBeenCalledWith("secondary:thread", false);
   });
 
-  it("compacts a stale thread before sending unless kept or a fresh session is armed", async () => {
+  it("compacts a stale thread before sending unless a fresh session is armed", async () => {
     state.grantedEnvironments.add("secondary");
     state.projection = {
       thread: {
@@ -320,49 +314,12 @@ describe("mobile task permissions", () => {
       visibleTurnItems: [],
       updatedAt: DateTime.makeUnsafe(0),
     } as unknown as OrchestrationV2ThreadProjection;
-    state.compactModel = "gpt-5.4";
-    // The notice's minute clock (the epoch here) trails a deadline the send's exact time has passed.
-    state.compactDueAt = "2026-01-01T00:00:00.000Z";
-    const unannounced = useThreadComposerState(NO_SIDE_CHATS);
-    expect(unannounced.compactBeforeSend).toBeNull();
-    await unannounced.onSendMessage();
-    expect(state.enqueue).toHaveBeenLastCalledWith(
-      expect.not.objectContaining({ compactBeforeSend: true }),
-    );
-    state.compactDueAt = "";
+    state.compactDue = true;
     const composer = useThreadComposerState(NO_SIDE_CHATS);
-    expect(composer.compactBeforeSend?.tokens).toBe(248_000);
     await composer.onSendMessage();
     expect(state.enqueue).toHaveBeenLastCalledWith(
       expect.objectContaining({ compactBeforeSend: true }),
     );
-    // A model picked after the last render still decides the send.
-    state.draft = {
-      ...state.draft,
-      modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.5" },
-    };
-    await composer.onSendMessage();
-    expect(state.enqueue).toHaveBeenLastCalledWith(
-      expect.not.objectContaining({ compactBeforeSend: true }),
-    );
-    state.draft = { ...state.draft, modelSelection: undefined };
-    composer.compactBeforeSend?.toggleKeepFullHistory();
-    const kept = useThreadComposerState(NO_SIDE_CHATS);
-    expect(kept.compactBeforeSend?.keepFullHistory).toBe(true);
-    kept.compactBeforeSend?.toggleKeepFullHistory();
-    const compactAgain = useThreadComposerState(NO_SIDE_CHATS);
-    expect(compactAgain.compactBeforeSend?.keepFullHistory).toBe(false);
-    await compactAgain.onSendMessage();
-    expect(state.enqueue).toHaveBeenLastCalledWith(
-      expect.objectContaining({ compactBeforeSend: true }),
-    );
-    compactAgain.compactBeforeSend?.toggleKeepFullHistory();
-    await useThreadComposerState(NO_SIDE_CHATS).onSendMessage();
-    expect(state.enqueue).toHaveBeenLastCalledWith(
-      expect.not.objectContaining({ compactBeforeSend: true }),
-    );
-    // Keeping covers one send, as on web.
-    expect(useThreadComposerState(NO_SIDE_CHATS).compactBeforeSend?.keepFullHistory).toBe(false);
     state.freshPending = true;
     await composer.onSendMessage();
     expect(state.enqueue).toHaveBeenLastCalledWith(

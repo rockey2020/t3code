@@ -11,7 +11,6 @@ export type TimelineTranslator = (
 // Timeline logic builds these labels as English strings (shared with mobile and asserted in
 // tests), so the web client translates the fixed ones when it renders them.
 const FIXED_LABELS = new Set<string>([
-  "Starting",
   "Declined",
   "Request ended",
   "Waiting for an answer in the original thread",
@@ -40,7 +39,6 @@ const FIXED_LABELS = new Set<string>([
 ]);
 
 const PATTERNS: ReadonlyArray<readonly [RegExp, TimelineUiKey, string]> = [
-  [/^Starting (.+)$/, "Starting {provider}", "provider"],
   [/^Worked for (.+)$/, "Worked for {duration}", "duration"],
   [/^You stopped after (.+)$/, "You stopped after {duration}", "duration"],
   [/^Continued for (.+)$/, "Continued for {duration}", "duration"],

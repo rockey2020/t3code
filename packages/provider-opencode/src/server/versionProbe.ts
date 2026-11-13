@@ -1,4 +1,3 @@
-import { resolveProviderProbeTimeoutMs } from "@t3tools/provider-core/server/snapshotProbe";
 import { parseSemver } from "@t3tools/shared/semver";
 import * as Cache from "effect/Cache";
 import * as Duration from "effect/Duration";
@@ -18,8 +17,8 @@ export interface ProbedOpenCode {
 }
 
 // Meant to stop a hung `--version`; wrapped installs can take several seconds to start cold.
-const OPENCODE_VERSION_PROBE_TIMEOUT_MS = 10_000;
-const OPENCODE_SERVER_PROBE_TIMEOUT_MS = 5_000;
+const OPENCODE_VERSION_PROBE_TIMEOUT = "10 seconds";
+const OPENCODE_SERVER_PROBE_TIMEOUT = "5 seconds";
 // 2.x's own CLI decodes `{version, pid}` from `/api/info`; requiring both keeps unrelated JSON out.
 const decodeApiInfo = Schema.decodeUnknownOption(
   Schema.fromJsonString(Schema.Struct({ version: Schema.String, pid: Schema.Int })),
@@ -56,16 +55,11 @@ function classifyOpenCodeProbeResponse(
   return probed(Option.getOrUndefined(version));
 }
 
-export const probeOpenCodeBinary = Effect.fn("probeOpenCodeBinary")(function* (
+const probeOpenCodeBinary = Effect.fn("probeOpenCodeBinary")(function* (
   binaryPath: string,
   environment: NodeJS.ProcessEnv | undefined,
 ) {
   const runtime = yield* OpenCodeRuntime.OpenCodeRuntime;
-  const timeoutMs = resolveProviderProbeTimeoutMs(
-    "opencode",
-    OPENCODE_VERSION_PROBE_TIMEOUT_MS,
-    environment,
-  );
   const { stdout } = yield* runtime
     .runOpenCodeCommand({
       binaryPath,
@@ -74,12 +68,12 @@ export const probeOpenCodeBinary = Effect.fn("probeOpenCodeBinary")(function* (
     })
     .pipe(
       Effect.timeoutOrElse({
-        duration: timeoutMs,
+        duration: OPENCODE_VERSION_PROBE_TIMEOUT,
         orElse: () =>
           Effect.fail(
             new OpenCodeRuntime.OpenCodeRuntimeError({
               operation: "probeOpenCodeBinary",
-              detail: `OpenCode CLI version probe timed out after ${timeoutMs / 1_000} seconds.`,
+              detail: `OpenCode CLI version probe timed out after ${OPENCODE_VERSION_PROBE_TIMEOUT}.`,
             }),
           ),
       }),
@@ -96,7 +90,6 @@ export const probeOpenCodeBinary = Effect.fn("probeOpenCodeBinary")(function* (
 const probeOpenCodeServer = Effect.fn("probeOpenCodeServer")(function* (
   serverUrl: string,
   serverPassword: string,
-  environment?: NodeJS.ProcessEnv,
 ) {
   const client = yield* HttpClient.HttpClient;
   const baseUrl = URL.parse(serverUrl.trim());
@@ -139,11 +132,7 @@ const probeOpenCodeServer = Effect.fn("probeOpenCodeServer")(function* (
             }),
         ),
         Effect.timeoutOrElse({
-          duration: resolveProviderProbeTimeoutMs(
-            "opencode",
-            OPENCODE_SERVER_PROBE_TIMEOUT_MS,
-            environment,
-          ),
+          duration: OPENCODE_SERVER_PROBE_TIMEOUT,
           orElse: () =>
             Effect.fail(
               new OpenCodeRuntime.OpenCodeRuntimeError({
@@ -180,7 +169,7 @@ export const probeOpenCodeRuntime = (
   HttpClient.HttpClient | OpenCodeRuntime.OpenCodeRuntime
 > =>
   settings.serverUrl.trim().length > 0
-    ? probeOpenCodeServer(settings.serverUrl, settings.serverPassword, environment)
+    ? probeOpenCodeServer(settings.serverUrl, settings.serverPassword)
     : probeOpenCodeBinary(settings.binaryPath, environment);
 
 // Only 2.x is kept: 1.x can be upgraded in place while T3 runs, and 2.x converts the shared

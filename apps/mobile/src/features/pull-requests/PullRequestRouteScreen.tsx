@@ -52,7 +52,6 @@ import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { RegistryContext, useAtomRefresh, useAtomValue } from "@effect/atom-react";
 import { pullRequestReviewKey } from "./pullRequestReviewDrafts";
 import {
-  pullRequestConversationThreads,
   type PullRequestDetail,
   type PullRequestListEntry,
   type PullRequestSummary,
@@ -61,8 +60,7 @@ import { PullRequestOverviewLoading } from "./PullRequestOverviewLoading";
 import { copyPullRequestLink, sharePullRequestLink } from "./pullRequestLink";
 import { pullRequestStatus } from "./pullRequestStatus";
 import { use, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
-import { Linking, Platform, Pressable, StyleSheet, View } from "react-native";
-import { RefreshControl } from "../../components/ui/RefreshControl";
+import { Linking, Platform, Pressable, RefreshControl, StyleSheet, View } from "react-native";
 import { NativeScrollView } from "../../native/NativeScrollViewMarker";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -178,8 +176,7 @@ function usePullRequestActivityRows(params: PullRequestParams, filter: ActivityF
     ? result.data?.comments.find((comment) => pullRequestAnchorMatchesUrl(anchor, comment.url))
     : null;
   const targetThread = anchor
-    ? result.data &&
-      pullRequestConversationThreads(result.data).find((thread) =>
+    ? result.data?.reviewThreads.find((thread) =>
         thread.comments.some((comment) => pullRequestAnchorMatchesUrl(anchor, comment.url)),
       )
     : null;
@@ -359,7 +356,7 @@ function usePullRequestToolbarHeight(bottomInset: number) {
 }
 
 export function PullRequestRouteScreen({ route }: StaticScreenProps<PullRequestParams>) {
-  const returnToList = useAndroidWorkspaceBack();
+  const returnToList = useAndroidWorkspaceBack("pullRequests");
   const { layout } = useAdaptiveWorkspaceLayout();
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();

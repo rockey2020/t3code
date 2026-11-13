@@ -43,11 +43,6 @@ const injectShortReads = Effect.fn("injectShortReads")(function* (target: string
   yield* Effect.addFinalizer(() => Effect.sync(() => open.mockImplementation(native.open)));
 });
 
-const whitespaceFilePaths =
-  HostProcess.Platform.defaultValue() === "win32"
-    ? [" report.txt"]
-    : [" report.txt", "report.txt ", "\treport.txt\t", " "];
-
 const UNKNOWN_WORKSPACE_PREFIX = "t3code-unknown-workspace-";
 const layerKnownWorkspacesTest = Layer.mock(KnownWorkspaces.KnownWorkspaces)({
   assertContains: (cwd) =>
@@ -201,14 +196,6 @@ it.layer(layerTest, { excludeTestServices: true })("WorkspaceFileSystemLive", (i
           byteLength: 26,
           truncated: false,
         });
-
-        yield* writeTextFile(cwd, "report.txt", "ordinary file");
-        for (const relativePath of whitespaceFilePaths) {
-          yield* writeTextFile(cwd, relativePath, "whitespace file");
-          const read = yield* workspaceFileSystem.readFile({ cwd, relativePath });
-          expect(read.contents).toBe("whitespace file");
-          expect(read.relativePath).toBe(relativePath);
-        }
       }),
     );
 
@@ -263,14 +250,6 @@ it.layer(layerTest, { excludeTestServices: true })("WorkspaceFileSystemLive", (i
           byteLength: 9,
           truncated: false,
         });
-
-        for (const relativePath of whitespaceFilePaths) {
-          yield* writeTextFile(outsideDir, relativePath, "whitespace file");
-          const requestedPath = path.join(outsideDir, relativePath);
-          const read = yield* workspaceFileSystem.readFile({ cwd, relativePath: requestedPath });
-          expect(read.contents).toBe("whitespace file");
-          expect(read.relativePath).toBe(requestedPath);
-        }
       }),
     );
 
@@ -311,14 +290,6 @@ it.layer(layerTest, { excludeTestServices: true })("WorkspaceFileSystemLive", (i
           const error = yield* workspaceFileSystem.readFile(input).pipe(Effect.flip);
           expect(error).toBeInstanceOf(WorkspacePaths.WorkspacePathOutsideRootError);
         }
-        const metadata = yield* workspaceFileSystem.getMetadata({
-          paths: [
-            path.join(config.secretsDir, "example.bin"),
-            path.join(config.stateDir, "statev2.sqlite"),
-            config.stateDir,
-          ],
-        });
-        expect(metadata.entries).toEqual([null, null, { kind: "directory" }]);
       }),
     );
 
@@ -581,21 +552,6 @@ it.layer(layerTest, { excludeTestServices: true })("WorkspaceFileSystemLive", (i
         expect(yield* fileSystem.readFileString(path.join(cwd, "src/main.ts"))).toBe(
           "export const edited = true;\n",
         );
-
-        yield* writeTextFile(cwd, "report.txt", "ordinary file");
-        for (const relativePath of whitespaceFilePaths) {
-          yield* writeTextFile(cwd, relativePath, "whitespace file");
-          const written = yield* workspaceFileSystem.writeFile({
-            cwd,
-            relativePath,
-            contents: "edited",
-          });
-          expect(yield* fileSystem.readFileString(path.join(cwd, "report.txt"))).toBe(
-            "ordinary file",
-          );
-          expect(yield* fileSystem.readFileString(path.join(cwd, relativePath))).toBe("edited");
-          expect(written.relativePath).toBe(relativePath);
-        }
       }).pipe(
         Effect.provide(
           Layer.fresh(WorkspaceFileSystem.layer).pipe(
@@ -618,13 +574,17 @@ it.layer(layerTest, { excludeTestServices: true })("WorkspaceFileSystemLive", (i
         const path = yield* Path.Path;
         const fileSystem = yield* FileSystem.FileSystem;
 
-        for (const relativePath of ["../escape.md", "../escape.md ", " folder/../../escape.md"]) {
-          const error = yield* workspaceFileSystem
-            .writeFile({ cwd, relativePath, contents: "# nope\n" })
-            .pipe(Effect.flip);
+        const error = yield* workspaceFileSystem
+          .writeFile({
+            cwd,
+            relativePath: "../escape.md",
+            contents: "# nope\n",
+          })
+          .pipe(Effect.flip);
 
-          expect(error).toBeInstanceOf(WorkspacePaths.WorkspacePathOutsideRootError);
-        }
+        expect(error.message).toContain(
+          "Workspace file path must be relative to the project root: ../escape.md",
+        );
 
         const escapedPath = path.resolve(cwd, "..", "escape.md");
         const escapedStat = yield* fileSystem

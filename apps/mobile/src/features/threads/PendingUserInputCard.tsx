@@ -81,7 +81,6 @@ function QuestionText(props: {
   readonly threadId: ThreadId;
   readonly workspaceRoot: string | null;
   readonly setDirection: TextDirection | undefined;
-  readonly preserveSoftBreaks?: boolean;
 }) {
   const styles = useMarkdownPreviewStyles();
   const markdown = useLiveThreadLinkLabels(props.markdown, props.environmentId);
@@ -114,7 +113,6 @@ function QuestionText(props: {
         Platform.OS === "android" ? undefined : props.setDirection === "rtl" ? "right" : "left"
       }
       onLinkPress={openLink}
-      preserveSoftBreaks={props.preserveSoftBreaks}
     />
   );
 }
@@ -273,7 +271,6 @@ export function PendingUserInputCard(props: PendingUserInputCardProps) {
                 threadId={props.threadId}
                 workspaceRoot={props.workspaceRoot}
                 setDirection={setDirection}
-                preserveSoftBreaks
               />
               <View className="gap-2">
                 {question.options.map((option) => {
@@ -282,56 +279,43 @@ export function PendingUserInputCard(props: PendingUserInputCardProps) {
                   const description =
                     option.description !== option.label ? option.description : undefined;
                   return (
-                    <View key={optionValue} className="gap-1.5">
-                      <Pressable
-                        accessibilityRole={question.multiSelect ? "checkbox" : "radio"}
-                        accessibilityState={{ checked: selected, disabled: responseDisabled }}
-                        disabled={responseDisabled}
-                        className={cn(
-                          "min-h-12 w-full rounded-2xl border px-3.5 py-3",
-                          selected ? "border-primary bg-primary/10" : "border-border bg-input",
-                        )}
-                        onPress={() =>
-                          props.onSelectOption(
-                            props.pendingUserInput.requestId,
-                            question,
-                            optionValue,
-                          )
-                        }
-                      >
-                        <View className="min-w-0 flex-1 gap-0.5">
+                    <Pressable
+                      key={optionValue}
+                      accessibilityRole={question.multiSelect ? "checkbox" : "radio"}
+                      accessibilityState={{ checked: selected, disabled: responseDisabled }}
+                      disabled={responseDisabled}
+                      className={cn(
+                        "min-h-12 w-full rounded-2xl border px-3.5 py-3",
+                        selected ? "border-primary bg-primary/10" : "border-border bg-input",
+                      )}
+                      onPress={() =>
+                        props.onSelectOption(
+                          props.pendingUserInput.requestId,
+                          question,
+                          optionValue,
+                        )
+                      }
+                    >
+                      <View className="min-w-0 flex-1 gap-0.5">
+                        <Text
+                          className={cn(
+                            "font-t3-bold text-sm",
+                            selected ? "text-foreground" : "text-foreground-secondary",
+                          )}
+                          style={proseDirectionStyle(option.label, setDirection)}
+                        >
+                          {option.label}
+                        </Text>
+                        {description ? (
                           <Text
-                            className={cn(
-                              "font-t3-bold text-sm",
-                              selected ? "text-foreground" : "text-foreground-secondary",
-                            )}
-                            style={proseDirectionStyle(option.label, setDirection)}
+                            className="font-sans text-sm leading-5 text-foreground-muted"
+                            style={proseDirectionStyle(description, setDirection)}
                           >
-                            {option.label}
+                            {description}
                           </Text>
-                          {description ? (
-                            <Text
-                              className="font-sans text-sm leading-5 text-foreground-muted"
-                              style={proseDirectionStyle(description, setDirection)}
-                            >
-                              {description}
-                            </Text>
-                          ) : null}
-                        </View>
-                      </Pressable>
-                      {option.preview ? (
-                        <View className="px-3.5">
-                          <QuestionText
-                            markdown={option.preview}
-                            environmentId={props.environmentId}
-                            threadId={props.threadId}
-                            workspaceRoot={props.workspaceRoot}
-                            setDirection={setDirection}
-                            preserveSoftBreaks
-                          />
-                        </View>
-                      ) : null}
-                    </View>
+                        ) : null}
+                      </View>
+                    </Pressable>
                   );
                 })}
               </View>

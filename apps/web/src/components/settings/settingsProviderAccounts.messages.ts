@@ -1,7 +1,6 @@
 import { translate, type Locale } from "~/i18n/locale";
 
 export const settingsProviderAccountsMessages = {
-  "Update Codex": "更新 Codex",
   "Manage usage": "管理用量",
   "We do not recommend managing multiple {providerName} accounts in T3 Code.":
     "不建议在 T3 Code 中管理多个 {providerName} 账户。",

@@ -160,7 +160,6 @@ export function SourceControlTokenSettings({
               id={`${definition.kind}-token-${environmentId}`}
               size="sm"
               aria-label={t("{label} token", { label: definition.label })}
-              environmentId={environmentId}
               configured={isSaved && !isSecretReference(savedToken)}
               value={draft}
               sources={secretSources}

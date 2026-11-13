@@ -127,7 +127,6 @@ import {
   toDesktopPairingLinkRecord,
   toDesktopClientSessionRecord,
   selectPairingEndpoint,
-  isServerNetworkAccessible,
   isTailscaleHttpsEndpoint,
   endpointDefaultPreferenceKey,
 } from "./ConnectionsSettings.logic";
@@ -454,10 +453,7 @@ function ConnectionsSettingsContent({
   })();
   const isLocalBackendNetworkAccessible = desktopBridge
     ? desktopServerExposureState?.mode === "network-accessible"
-    : isServerNetworkAccessible({
-        authPolicy: currentAuthPolicy,
-        directEndpoints: accessEnvironment?.serverConfig?.directEndpoints,
-      });
+    : currentAuthPolicy === "remote-reachable";
   const trimmedTailscaleServePortInput = tailscaleServePortInput.trim();
   const parsedTailscaleServePort = Number(trimmedTailscaleServePortInput);
   const isTailscaleServePortValid =
@@ -1138,7 +1134,7 @@ function ConnectionsSettingsContent({
       description={
         desktopBridge
           ? t("This connection cannot view or change network exposure.")
-          : isLocalBackendNetworkAccessible
+          : currentAuthPolicy === "remote-reachable"
             ? t(
                 "Remote access is already configured. Change network exposure where the server starts.",
               )

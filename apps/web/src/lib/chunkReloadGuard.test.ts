@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vite-plus/test";
 
-import { isChunkLoadError, reloadOnceForChunkLoadError } from "./chunkReloadGuard";
+import { clearChunkReloadGuard, reloadOnceForChunkLoadError } from "./chunkReloadGuard";
 
 function createStorageStub(): Storage {
   const store = new Map<string, string>();
@@ -25,20 +25,21 @@ describe("reloadOnceForChunkLoadError", () => {
     const storage = createStorageStub();
     const reload = vi.fn();
 
-    expect(reloadOnceForChunkLoadError(() => storage, reload, "1.0.0")).toBe(true);
+    expect(reloadOnceForChunkLoadError(() => storage, reload)).toBe(true);
     expect(reload).toHaveBeenCalledTimes(1);
 
-    expect(reloadOnceForChunkLoadError(() => storage, reload, "1.0.0")).toBe(false);
+    expect(reloadOnceForChunkLoadError(() => storage, reload)).toBe(false);
     expect(reload).toHaveBeenCalledTimes(1);
   });
 
-  it("reloads again once a deploy changed the build", () => {
+  it("reloads again after a successful boot cleared the guard", () => {
     const storage = createStorageStub();
     const reload = vi.fn();
 
-    reloadOnceForChunkLoadError(() => storage, reload, "1.0.0");
+    reloadOnceForChunkLoadError(() => storage, reload);
+    clearChunkReloadGuard(() => storage);
 
-    expect(reloadOnceForChunkLoadError(() => storage, reload, "1.0.1")).toBe(true);
+    expect(reloadOnceForChunkLoadError(() => storage, reload)).toBe(true);
     expect(reload).toHaveBeenCalledTimes(2);
   });
 
@@ -50,16 +51,6 @@ describe("reloadOnceForChunkLoadError", () => {
 
     expect(reloadOnceForChunkLoadError(blocked, reload)).toBe(false);
     expect(reload).not.toHaveBeenCalled();
-  });
-});
-
-describe("isChunkLoadError", () => {
-  it.each([
-    ["Failed to fetch dynamically imported module: t3code://app/assets/a.js", true],
-    ["error loading dynamically imported module: https://app.t3.codes/assets/a.js", true],
-    ["Importing a module script failed.", true],
-    ["Cannot read properties of undefined", false],
-  ])("%s", (message, expected) => {
-    expect(isChunkLoadError(new TypeError(message))).toBe(expected);
+    expect(() => clearChunkReloadGuard(blocked)).not.toThrow();
   });
 });

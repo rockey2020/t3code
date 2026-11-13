@@ -595,6 +595,22 @@ jobs:
         run: |
           set -euo pipefail
           umask 077
+          # macOS system LibreSSL lacks PKCS#12 -iter; use the runner's OpenSSL 3 keg.
+          if ! openssl_prefix="$(brew --prefix --installed openssl@3)"; then
+            echo "Homebrew OpenSSL 3 is required for the fixed signing identity." >&2
+            exit 1
+          fi
+          openssl_bin="$openssl_prefix/bin/openssl"
+          if [[ "$openssl_prefix" != /* || ! -x "$openssl_bin" ]]; then
+            echo "Homebrew OpenSSL 3 executable is unavailable: $openssl_bin" >&2
+            exit 1
+          fi
+          openssl_version="$("$openssl_bin" version)"
+          if [[ "$openssl_version" != "OpenSSL 3."* ]]; then
+            echo "Unsupported signing OpenSSL: $openssl_bin ($openssl_version)" >&2
+            exit 1
+          fi
+          echo "Signing OpenSSL: $openssl_bin ($openssl_version)"
           if [[ -z "$FORK_MACOS_CERTIFICATE_P12" || -z "$FORK_MACOS_CERTIFICATE_PASSWORD" ]]; then
             echo "The fixed fork macOS certificate secrets are required; refusing an ad-hoc build." >&2
             exit 1
@@ -602,7 +618,7 @@ jobs:
           signing_dir="$RUNNER_TEMP/t3-fork-macos-signing"
           mkdir -m 700 "$signing_dir"
           printf '%s' "$FORK_MACOS_CERTIFICATE_P12" | base64 -D > "$signing_dir/certificate.p12"
-          openssl pkcs12 -in "$signing_dir/certificate.p12" -passin env:FORK_MACOS_CERTIFICATE_PASSWORD -clcerts -nokeys -out "$signing_dir/certificate.pem"
+          "$openssl_bin" pkcs12 -in "$signing_dir/certificate.p12" -passin env:FORK_MACOS_CERTIFICATE_PASSWORD -clcerts -nokeys -out "$signing_dir/certificate.pem"
           export FORK_SIGNING_CERTIFICATE_PATH="$signing_dir/certificate.pem"
           fingerprint=$(node --input-type=module <<'JS'
           import { readFileSync } from 'node:fs';
@@ -614,7 +630,7 @@ jobs:
           JS
           )
           keychain="$signing_dir/signing.keychain-db"
-          keychain_password=$(openssl rand -base64 32)
+          keychain_password=$("$openssl_bin" rand -base64 32)
           echo "::add-mask::$keychain_password"
           # Save the original user-domain search list before creating the temporary keychain.
           export T3_FORK_SIGNING_DIR="$signing_dir"
@@ -632,9 +648,9 @@ jobs:
           # Rewrap only inside this private, temporary directory, with a fresh
           # random password, while preserving the exact certificate and key.
           export T3_FORK_IMPORT_PASSWORD="$keychain_password"
-          openssl pkcs12 -in "$signing_dir/certificate.p12" -passin env:FORK_MACOS_CERTIFICATE_PASSWORD -nocerts -aes256 -out "$signing_dir/private-key.encrypted.pem" -passout env:T3_FORK_IMPORT_PASSWORD
-          openssl pkcs12 -export -inkey "$signing_dir/private-key.encrypted.pem" -passin env:T3_FORK_IMPORT_PASSWORD -in "$signing_dir/certificate.pem" -out "$signing_dir/apple-import.p12" -passout env:T3_FORK_IMPORT_PASSWORD -keypbe PBE-SHA1-3DES -certpbe PBE-SHA1-3DES -macalg sha1 -iter 100000
-          openssl pkcs12 -in "$signing_dir/apple-import.p12" -passin env:T3_FORK_IMPORT_PASSWORD -info -noout
+          "$openssl_bin" pkcs12 -in "$signing_dir/certificate.p12" -passin env:FORK_MACOS_CERTIFICATE_PASSWORD -nocerts -aes256 -out "$signing_dir/private-key.encrypted.pem" -passout env:T3_FORK_IMPORT_PASSWORD
+          "$openssl_bin" pkcs12 -export -inkey "$signing_dir/private-key.encrypted.pem" -passin env:T3_FORK_IMPORT_PASSWORD -in "$signing_dir/certificate.pem" -out "$signing_dir/apple-import.p12" -passout env:T3_FORK_IMPORT_PASSWORD -keypbe PBE-SHA1-3DES -certpbe PBE-SHA1-3DES -macalg sha1 -iter 100000
+          "$openssl_bin" pkcs12 -in "$signing_dir/apple-import.p12" -passin env:T3_FORK_IMPORT_PASSWORD -info -noout
           security import "$signing_dir/apple-import.p12" -k "$keychain" -P "$T3_FORK_IMPORT_PASSWORD" -T /usr/bin/codesign
           unset T3_FORK_IMPORT_PASSWORD
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$keychain_password" "$keychain" >/dev/null

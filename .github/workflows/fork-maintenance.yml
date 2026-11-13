@@ -15,14 +15,17 @@ on:
 
 permissions:
   contents: write
-  actions: write
-
-concurrency:
-  group: fork-maintenance
-  cancel-in-progress: ${{ github.event_name == 'push' }}
+  actions: read
 
 jobs:
   maintain:
+    name: Maintain sources
+    concurrency:
+      group: fork-maintenance-source
+      cancel-in-progress: false
+    outputs:
+      builds: ${{ steps.prepare.outputs.builds }}
+      has_builds: ${{ steps.prepare.outputs.has_builds }}
     if: github.repository == 'rockey2020/t3code'
     runs-on: ubuntu-24.04
     timeout-minutes: 90
@@ -40,7 +43,7 @@ jobs:
             !/.repos/
           sparse-checkout-cone-mode: false
       - name: Test maintenance release selection
-        run: node --test .github/scripts/fork-maintenance.node-test.mjs .github/scripts/fork-signing.node-test.mjs scripts/i18n-upstream.node-test.mjs
+        run: node --test .github/scripts/fork-maintenance.node-test.mjs .github/scripts/fork-signing.node-test.mjs .github/scripts/fork-orchestration.node-test.mjs .github/scripts/fork-release-check.node-test.mjs .github/scripts/fork-watchdog.node-test.mjs scripts/i18n-upstream.node-test.mjs
       - name: Prepare checkout and merge scheduled upstream
         id: sync
         env:
@@ -71,7 +74,8 @@ jobs:
         env:
           BASE: ${{ github.event_name == 'push' && github.event.before || steps.sync.outputs.original }}
         run: vp run check:changed "$BASE" --concurrency 1
-      - name: Publish validated source and start tagged builds
+      - name: Publish validated source and prepare tagged builds
+        id: prepare
         env:
           GH_TOKEN: ${{ github.token }}
         run: node .github/scripts/fork-maintenance.mjs prepare
@@ -85,3 +89,27 @@ jobs:
             fork-maintenance-report.json
           if-no-files-found: ignore
           retention-days: 30
+
+  release:
+    name: Release ${{ matrix.channel }}
+    needs: maintain
+    if: ${{ always() && !cancelled() && needs.maintain.outputs.has_builds == 'true' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.maintain.outputs.builds || '[]') }}
+    permissions:
+      actions: read
+      contents: write
+    uses: ./.github/workflows/fork-release.yml
+    secrets:
+      FORK_MACOS_CERTIFICATE_P12: ${{ secrets.FORK_MACOS_CERTIFICATE_P12 }}
+      FORK_MACOS_CERTIFICATE_PASSWORD: ${{ secrets.FORK_MACOS_CERTIFICATE_PASSWORD }}
+    with:
+      ref: ${{ matrix.ref }}
+      version: ${{ matrix.version }}
+      tag: ${{ matrix.tag }}
+      channel: ${{ matrix.channel }}
+      upstream_tag: ${{ matrix.upstream_tag }}
+      artifact_namespace: ${{ matrix.artifact_namespace }}
+      rebuild: ${{ inputs.rebuild || false }}

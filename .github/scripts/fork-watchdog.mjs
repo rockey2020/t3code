@@ -99,76 +99,103 @@ export async function recoverMaintenance({ api, config, now }) {
     }
     return runs;
   };
+  const sourceState = async (run, refresh = true) => {
+    if (run.status === "queued" && !(age(run) >= queueLimit))
+      return { kind: "active", time: started(run) };
+    const current = refresh ? await api(`${root}/actions/runs/${run.id}`) : run;
+    if (!current || !belongs(current) || current.id !== run.id)
+      throw new Error("Maintenance run identity changed; recovery refused.");
+    if (current.status === "completed") return { kind: "completed", time: started(current) };
+    let previous;
+    let jobs;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const collected = [];
+      const seen = new Set();
+      let total;
+      let complete = false;
+      for (let page = 1; page <= 10; page++) {
+        const result = await api(`${root}/actions/runs/${run.id}/jobs?filter=latest&per_page=100&page=${page}`);
+        if (!Number.isSafeInteger(result?.total_count) || result.total_count < 0 || !Array.isArray(result.jobs)) break;
+        total ??= result.total_count;
+        if (total !== result.total_count || result.jobs.some((job) => !Number.isSafeInteger(job?.id) || seen.has(job.id))) break;
+        for (const job of result.jobs) { seen.add(job.id); collected.push(job); }
+        if (seen.size !== collected.length || seen.size > total) break;
+        if (seen.size === total) { complete = true; break; }
+        if (!result.jobs.length) break;
+      }
+      if (!complete) { previous = undefined; continue; }
+      const fingerprint = JSON.stringify(collected.map(({ id, name, status, conclusion, started_at, completed_at }) =>
+        [id, name, status, conclusion, started_at, completed_at]).sort((a, b) => a[0] - b[0]));
+      if (fingerprint === previous) { jobs = collected; break; }
+      previous = fingerprint;
+    }
+    if (!jobs) throw new Error(`Incomplete or unstable source job inventory for run ${run.id}; refusing recovery.`);
+    const source = jobs.filter((job) => ["Maintain sources", "maintain"].includes(job.name));
+    if (source.length === 1 && source[0].status === "completed") {
+      const time = Date.parse(source[0].started_at);
+      if (!Number.isFinite(time) || !source[0].conclusion)
+        throw new Error(`Invalid completed source job inventory for run ${run.id}`);
+      return { kind: "completed", time };
+    }
+    if (jobs.length === 0 && current.status === "queued" && age(current) >= queueLimit)
+      return { kind: "stale", time: started(current) };
+    return { kind: "active", time: started(current) };
+  };
   const runs = await pending();
-  if (runs.some((run) => run.status !== "queued" || !(age(run) >= queueLimit)))
-    return { status: "active", runs: runs.map((run) => run.id) };
+  const observations = new Map();
   let candidates = [];
   for (const run of runs) {
-    const current = await api(`${root}/actions/runs/${run.id}`);
-    const jobs = await api(`${root}/actions/runs/${run.id}/jobs?per_page=1`);
-    if (
-      !belongs(current) ||
-      current.status !== "queued" ||
-      !(age(current) >= queueLimit) ||
-      jobs.total_count !== 0
-    )
-      return { status: "active", runs: [run.id] };
-    candidates.push(run.id);
+    const state = await sourceState(run);
+    if (state.kind === "active") return { status: "active", runs: [run.id] };
+    observations.set(run.id, state);
+    if (state.kind === "stale") candidates.push(run.id);
   }
-  // Cancellation has no conditional API: never race a runner starting after a read.
-  // A manual dispatch shares maintenance's non-cancelling concurrency group.
-  // Reruns retain their original creation time, so scan unfiltered history.
+  // Never cancel a runner that can start after a read. Source-job concurrency
+  // serializes recovery without holding the six-hour sync behind platform builds.
   const latest = { workflow_runs: [] };
   const seen = new Set();
+  let total;
   for (let page = 1; ; page++) {
     if (page > 10) throw new Error("Actions inventory exceeds safety limit; refusing recovery.");
-    const history = await api(
-      `${root}/actions/workflows/${workflow}/runs?per_page=100&page=${page}`,
-    );
-    if (
-      !Number.isInteger(history.total_count) ||
-      history.total_count < 0 ||
-      history.workflow_runs.some((run) => seen.has(run.id)) ||
-      (!history.workflow_runs.length && seen.size < history.total_count)
-    )
+    const history = await api(`${root}/actions/workflows/${workflow}/runs?per_page=100&page=${page}`);
+    if (!Number.isSafeInteger(history?.total_count) || history.total_count < 0 || !Array.isArray(history.workflow_runs))
       throw new Error("Incomplete final Actions inventory; refusing recovery.");
-    for (const run of history.workflow_runs) seen.add(run.id);
-    latest.workflow_runs.push(...history.workflow_runs);
-    if (seen.size >= history.total_count) break;
+    total ??= history.total_count;
+    if (total !== history.total_count || history.workflow_runs.some((run) => !Number.isSafeInteger(run?.id) || seen.has(run.id)))
+      throw new Error("Incomplete final Actions inventory; refusing recovery.");
+    for (const run of history.workflow_runs) { seen.add(run.id); latest.workflow_runs.push(run); }
+    if (seen.size !== latest.workflow_runs.length || seen.size > total || (!history.workflow_runs.length && seen.size < total))
+      throw new Error("Incomplete final Actions inventory; refusing recovery.");
+    if (seen.size === total) break;
   }
-  if (
-    latest.workflow_runs.some(
-      (run) =>
-        belongs(run) &&
-        run.status !== "completed" &&
-        (run.status !== "queued" || !candidates.includes(run.id)),
-    )
-  )
-    return { status: "active" };
+  for (const run of latest.workflow_runs.filter(belongs)) {
+    const state = await sourceState(run, false);
+    if (state.kind === "active" || (state.kind === "stale" && !candidates.includes(run.id)))
+      return { status: "active" };
+    observations.set(run.id, state);
+  }
   const current = await pending();
-  if (
-    current.some(
-      (run) => run.status !== "queued" || !(age(run) >= queueLimit) || !candidates.includes(run.id),
-    )
-  )
-    return { status: "active" };
-  // Completed replacements supersede abandoned queues, even when they failed.
-  // Use actual start time so reruns of older workflow records also count.
-  const completed = latest.workflow_runs.filter(
-    (run) => belongs(run) && run.status === "completed",
-  );
+  for (const run of current) {
+    const state = await sourceState(run);
+    if (state.kind === "active" || (state.kind === "stale" && !candidates.includes(run.id)))
+      return { status: "active" };
+    observations.set(run.id, state);
+  }
+  const completed = [...observations.values()].filter((state) => state.kind === "completed");
   candidates = candidates.filter((id) => {
-    const queued = runs.find((run) => run.id === id);
-    return !completed.some((run) => started(run) > started(queued));
+    const state = observations.get(id);
+    return state?.kind === "stale" && !completed.some((done) => done.time > state.time);
   });
   if (!candidates.length) {
-    const recent = await api(
-      `${root}/actions/workflows/${workflow}/runs?branch=${config.branch}&per_page=1`,
-    );
-    const previous = [...recent.workflow_runs, ...latest.workflow_runs, ...runs]
-      .filter(belongs)
-      .sort((left, right) => started(right) - started(left))[0];
-    if (previous && !(age(previous) >= scheduleLimit)) return { status: "healthy" };
+    const recent = await api(`${root}/actions/workflows/${workflow}/runs?branch=${config.branch}&per_page=1`);
+    for (const run of recent.workflow_runs.filter(belongs)) {
+      const state = await sourceState(run, false);
+      if (state.kind === "active" || (state.kind === "stale" && !observations.has(run.id)))
+        return { status: "active" };
+      observations.set(run.id, state);
+    }
+    const previous = Math.max(...[...observations.values()].map((state) => state.time));
+    if (Number.isFinite(previous) && !(now - previous >= scheduleLimit)) return { status: "healthy" };
   }
   await api(`${root}/actions/workflows/${workflow}/dispatches`, {
     method: "POST",
@@ -207,3 +234,4 @@ if (
   };
   console.log(JSON.stringify(await recoverMaintenance({ api, config, now: Date.now() })));
 }
+

@@ -78,7 +78,11 @@ function fixture(runs, options = {}) {
     const match = path.match(/\/actions\/runs\/(\d+)(.*)$/);
     if (!match) throw new Error(`Unexpected API path ${path}`);
     const current = state.runs.find((item) => item.id === Number(match[1]));
-    if (match[2].startsWith("/jobs")) return { total_count: options.jobs ?? 0, jobs: [] };
+    if (match[2].startsWith("/jobs")) {
+      if (options.jobInventory) return options.jobInventory(Number(match[1]), new URLSearchParams(match[2].split("?")[1]));
+      const jobs = options.jobsByRun?.[Number(match[1])] ?? Array.from({ length: options.jobs ?? 0 }, (_, i) => ({ id: i + 1, name: "unknown", status: "queued" }));
+      return { total_count: jobs.length, jobs };
+    }
     if (match[2] === "/cancel") {
       state.cancelled.push(current.id);
       throw new Error("Cancellation must never be requested");
@@ -425,3 +429,48 @@ for (const extra of [
     },
   );
 }
+
+
+const sourceJob = (status, age = 60) => ({ id: 101, name: "Maintain sources", status,
+  conclusion: status === "completed" ? "success" : null,
+  started_at: new Date(now - age * 60_000).toISOString(),
+  completed_at: status === "completed" ? new Date(now - (age - 10) * 60_000).toISOString() : null,
+});
+NodeTest.test("stalled downstream Mac builds do not block source schedule recovery", async () => {
+  const f = fixture([run(1, "in_progress", 600)], { jobsByRun: { 1: [sourceJob("completed", 600), { id: 102, name: "release / mac / Build macOS arm64", status: "queued" }] } });
+  NodeAssert.equal((await f.execute()).status, "schedule-recovered");
+  NodeAssert.equal(f.state.dispatched, 1);
+  NodeAssert.deepEqual(f.state.cancelled, []);
+});
+NodeTest.test("recent completed source suppresses duplicate recovery while release runs", async () => {
+  const f = fixture([run(1, "in_progress", 60)], { jobsByRun: { 1: [sourceJob("completed", 60), { id: 102, name: "release / mac", status: "in_progress" }] } });
+  NodeAssert.equal((await f.execute()).status, "healthy");
+  NodeAssert.equal(f.state.dispatched, 0);
+});
+for (const status of ["queued", "in_progress", "waiting", "pending"]) {
+  NodeTest.test(`source job ${status} blocks duplicate source execution`, async () => {
+    const f = fixture([run(1, "in_progress", 600)], { jobsByRun: { 1: [sourceJob(status, 600)] } });
+    NodeAssert.equal((await f.execute()).status, "active");
+    NodeAssert.equal(f.state.dispatched, 0);
+  });
+}
+NodeTest.test("legacy maintain job is still recognized", async () => {
+  const f = fixture([run(1, "in_progress", 600)], { jobsByRun: { 1: [{ ...sourceJob("in_progress", 600), name: "maintain" }] } });
+  NodeAssert.equal((await f.execute()).status, "active");
+  NodeAssert.equal(f.state.dispatched, 0);
+});
+NodeTest.test("incomplete or unstable source-job inventory fails closed", async () => {
+  for (const jobInventory of [
+    () => ({ total_count: 2, jobs: [sourceJob("completed", 600)] }),
+    (() => { let n = 0; return () => ({ total_count: 1, jobs: [{ ...sourceJob("completed", 600), id: ++n }] }); })(),
+  ]) {
+    const f = fixture([run(1, "in_progress", 600)], { jobInventory });
+    await NodeAssert.rejects(f.execute(), /job inventory/i);
+    NodeAssert.equal(f.state.dispatched, 0);
+  }
+});
+NodeTest.test("completed source supersedes stale empty run without waiting for packages", async () => {
+  const f = fixture([run(1, "queued", 600), run(2, "in_progress", 60)], { jobsByRun: { 2: [sourceJob("completed", 60), { id: 102, name: "release / mac", status: "queued" }] } });
+  NodeAssert.equal((await f.execute()).status, "healthy");
+  NodeAssert.equal(f.state.dispatched, 0);
+});

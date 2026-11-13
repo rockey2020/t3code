@@ -14,156 +14,71 @@ import {
   releaseDelta,
   commitPreparedSource,
   gitOutput,
-  dispatchDesktopBuilds,
+  buildOutputs,
+  validateBuildDescriptor,
+  assertWorkflowSnapshot,
 } from "./fork-maintenance.mjs";
 
-function desktopDispatchFixture(overrides = {}) {
-  let workflow = {
-    id: 416001695,
-    path: ".github/workflows/fork-desktop.yml",
-    state: "disabled_manually",
-    updated_at: "2026-11-12T16:32:55.000Z",
-    ...overrides.workflow,
+const stableBuild = () => ({
+  ref: "a".repeat(40),
+  version: "0.1.9",
+  tag: "v0.1.9-zh.0123456789ab",
+  channel: "stable",
+  upstream_tag: "v0.1.9",
+});
+
+NodeTest.test("empty preparation safely skips every release", () => {
+  NodeAssert.deepEqual(buildOutputs([]), { builds: "[]", has_builds: "false" });
+});
+
+NodeTest.test("partial preparation emits only validated successful channels", () => {
+  const build = stableBuild();
+  NodeAssert.deepEqual(buildOutputs([build]), {
+    builds: JSON.stringify([{ ...build, artifact_namespace: `stable-${build.ref}-` }]),
+    has_builds: "true",
+  });
+});
+
+NodeTest.test("build descriptors reject malformed identities and duplicate channels", () => {
+  for (const mutation of [
+    { ref: "main" },
+    { version: "0.1.8" },
+    { tag: "v0.1.9-zh.no" },
+    { channel: "nightly" },
+    { upstream_tag: "v0.1.9-rc.1" },
+    { ref: "a".repeat(40) + "\\nfoo=true" },
+    { artifact_namespace: "other-" },
+  ])
+    NodeAssert.throws(() => validateBuildDescriptor({ ...stableBuild(), ...mutation }));
+  NodeAssert.throws(() => buildOutputs([stableBuild(), stableBuild()]));
+  NodeAssert.throws(() => buildOutputs(null));
+});
+
+NodeTest.test("workflow snapshot equality is mandatory for immutable sources", () => {
+  const calls = [];
+  const source = "a".repeat(40),
+    workflow = "b".repeat(40),
+    tree = "c".repeat(40);
+  const run = (args) => {
+    calls.push(args);
+    return tree;
   };
-  const requests = [];
-  const repositoryPath = "repos/rockey2020/t3code";
-  const workflowPath = `${repositoryPath}/actions/workflows/416001695`;
-  return {
-    requests,
-    options: {
-      runId: "43261831511",
-      repository: "rockey2020/t3code",
-      request: async (path, options = {}) => {
-        const method = options.method ?? "GET";
-        requests.push({ path, method, body: options.body });
-        if (path === repositoryPath && method === "GET")
-          return { id: overrides.repositoryId ?? 1454133935 };
-        if (path === workflowPath && method === "GET") return workflow;
-        if (path === `${workflowPath}/enable` && method === "PUT") {
-          if (overrides.enableError) throw overrides.enableError;
-          workflow = {
-            ...workflow,
-            state: "active",
-            updated_at: "2026-11-12T16:34:00.000Z",
-            ...overrides.enabledWorkflow,
-          };
-          return null;
-        }
-        if (
-          path === `${repositoryPath}/actions/workflows/fork-desktop.yml/dispatches` &&
-          method === "POST"
-        )
-          return null;
-        throw new Error(`Unexpected request: ${method} ${path}`);
-      },
-    },
-  };
-}
-
-NodeTest.test(
-  "the approved failed run restores and verifies its workflow before dispatch",
-  async (context) => {
-    const { requests, options } = desktopDispatchFixture();
-    const logs = [];
-    context.mock.method(console, "log", (message) => {
-      logs.push({ message, methods: requests.map(({ method }) => method) });
-    });
-    const build = { ref: "a".repeat(40), channel: "stable", tag: "v0.1.9-zh.test" };
-    await dispatchDesktopBuilds([build], options);
-    NodeAssert.deepEqual(
-      requests.map(({ method, path }) => `${method} ${path}`),
-      [
-        "GET repos/rockey2020/t3code",
-        "GET repos/rockey2020/t3code/actions/workflows/416001695",
-        "PUT repos/rockey2020/t3code/actions/workflows/416001695/enable",
-        "GET repos/rockey2020/t3code/actions/workflows/416001695",
-        "POST repos/rockey2020/t3code/actions/workflows/fork-desktop.yml/dispatches",
-      ],
-    );
-    NodeAssert.deepEqual(JSON.parse(requests.at(-1).body), { ref: "main", inputs: build });
-    await dispatchDesktopBuilds([build], options);
-    NodeAssert.equal(requests.filter(({ method }) => method === "PUT").length, 1);
-    NodeAssert.equal(logs.length, 1);
-    NodeAssert.match(logs[0].message, /416001695.*43261831511/);
-    NodeAssert.deepEqual(logs[0].methods, ["GET", "GET", "PUT", "GET"]);
-  },
-);
-
-NodeTest.test("other maintenance runs never enable a disabled workflow", async () => {
-  for (const runId of ["", "43248746709", "43261831510", "43261831512"]) {
-    const { requests, options } = desktopDispatchFixture();
-    await dispatchDesktopBuilds([{ channel: "nightly" }], { ...options, runId });
-    NodeAssert.deepEqual(
-      requests.map(({ method }) => method),
-      ["POST"],
-    );
-  }
-});
-
-NodeTest.test("no pending builds leaves the disabled workflow unchanged", async () => {
-  const { requests, options } = desktopDispatchFixture();
-  await dispatchDesktopBuilds([], options);
-  NodeAssert.deepEqual(requests, []);
-});
-
-NodeTest.test("an already active workflow is not enabled again", async (context) => {
-  const log = context.mock.method(console, "log", () => {});
-  const { requests, options } = desktopDispatchFixture({ workflow: { state: "active" } });
-  await dispatchDesktopBuilds([{ channel: "stable" }], options);
-  NodeAssert.deepEqual(
-    requests.map(({ method }) => method),
-    ["GET", "GET", "POST"],
+  assertWorkflowSnapshot({ run, source, workflow });
+  NodeAssert.deepEqual(calls, [
+    ["rev-parse", `${source}:.github/workflows`],
+    ["rev-parse", `${workflow}:.github/workflows`],
+  ]);
+  NodeAssert.throws(
+    () =>
+      assertWorkflowSnapshot({
+        run: ([, ref]) => (ref.startsWith(source) ? tree : "d".repeat(40)),
+        source,
+        workflow,
+      }),
+    /workflow snapshot/i,
   );
-  NodeAssert.equal(log.mock.callCount(), 0);
+  NodeAssert.throws(() => assertWorkflowSnapshot({ run, source: "main", workflow }), /immutable/i);
 });
-
-for (const scenario of [
-  { name: "different repository", repository: "pingdotgg/t3code", methods: [] },
-  { name: "recreated repository", repositoryId: 1, methods: ["GET"] },
-  { name: "different workflow ID", workflow: { id: 1 } },
-  { name: "different workflow path", workflow: { path: ".github/workflows/other.yml" } },
-  { name: "different active workflow", workflow: { id: 1, state: "active" } },
-  { name: "different disabled state", workflow: { state: "disabled_inactivity" } },
-  { name: "previous disable event", workflow: { updated_at: "2026-11-12T14:12:38.000Z" } },
-  { name: "missing disable timestamp", workflow: { updated_at: undefined } },
-  {
-    name: "denied enable",
-    enableError: new Error("GitHub PUT enable: 403 Forbidden"),
-    enabled: true,
-  },
-  { name: "unconfirmed enable", enabledWorkflow: { state: "disabled_manually" }, enabled: true },
-  { name: "changed workflow ID after enable", enabledWorkflow: { id: 1 }, enabled: true },
-  {
-    name: "changed workflow path after enable",
-    enabledWorkflow: { path: "other.yml" },
-    enabled: true,
-  },
-]) {
-  NodeTest.test(
-    `workflow recovery stops without dispatch or retry: ${scenario.name}`,
-    async (context) => {
-      const log = context.mock.method(console, "log", () => {});
-      const { requests, options } = desktopDispatchFixture(scenario);
-      await NodeAssert.rejects(
-        dispatchDesktopBuilds([{ channel: "stable" }], {
-          ...options,
-          repository: scenario.repository ?? options.repository,
-        }),
-        scenario.enableError ? /403 Forbidden/ : /repository|workflow|configured fork/i,
-      );
-      NodeAssert.deepEqual(
-        requests.map(({ method }) => method),
-        scenario.methods ??
-          (scenario.enableError
-            ? ["GET", "GET", "PUT"]
-            : scenario.enabled
-              ? ["GET", "GET", "PUT", "GET"]
-              : ["GET", "GET"]),
-      );
-      NodeAssert.equal(log.mock.callCount(), 0);
-    },
-  );
-}
 
 NodeTest.test("binary diffs retain blank context lines so release patches remain valid", () => {
   const directory = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "fork-patch-context-"));
@@ -595,6 +510,132 @@ NodeTest.test("push validates its snapshot while scheduled and manual runs merge
       NodeAssert.equal(run(fork, "config", "user.name"), "github-actions[bot]");
       NodeAssert.equal(run(fork, "status", "--porcelain"), "");
     }
+  } finally {
+    NodeFS.rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+NodeTest.test("prepare failure retains validated outputs for the unaffected channel", () => {
+  const directory = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "fork-prepare-outputs-"));
+  const repository = NodePath.join(directory, "source");
+  const origin = NodePath.join(directory, "origin.git");
+  const run = (args, cwd = repository) =>
+    gitOutput(
+      args,
+      NodeChildProcess.execFileSync("git", args, {
+        cwd,
+        encoding: "utf8",
+        stdio: ["pipe", "pipe", "pipe"],
+      }),
+    );
+  try {
+    NodeFS.mkdirSync(repository);
+    run(["init", "--initial-branch=main"]);
+    run(["config", "user.name", "Test"]);
+    run(["config", "user.email", "test@example.invalid"]);
+    run(["config", "commit.gpgSign", "false"]);
+    NodeFS.writeFileSync(NodePath.join(repository, "app.txt"), "tagged source\n");
+    run(["add", "."]);
+    run(["commit", "-m", "upstream"]);
+    const source = run(["rev-parse", "HEAD"]);
+    run(["tag", "v0.1.9"]);
+    run(["tag", "v0.1.10-nightly.20261112.1"]);
+    for (const path of [".github/scripts", ".github/workflows", ".fork"])
+      NodeFS.mkdirSync(NodePath.join(repository, path), { recursive: true });
+    NodeFS.copyFileSync(
+      new URL("./fork-maintenance.mjs", import.meta.url),
+      NodePath.join(repository, ".github/scripts/fork-maintenance.mjs"),
+    );
+    NodeFS.writeFileSync(
+      NodePath.join(repository, ".github/workflows/fork-maintenance.yml"),
+      "name: fixture\n",
+    );
+    NodeFS.writeFileSync(
+      NodePath.join(repository, ".fork/config.json"),
+      JSON.stringify({
+        repository: "fixture/fork",
+        repositoryId: 123,
+        upstream: "fixture/upstream",
+        branch: "main",
+      }),
+    );
+    NodeFS.writeFileSync(
+      NodePath.join(repository, ".fork/upstream.json"),
+      JSON.stringify({ sha: source }),
+    );
+    run(["add", "."]);
+    run(["commit", "-m", "fork"]);
+    const fork = run(["rev-parse", "HEAD"]);
+    const { fingerprint } = releaseDelta(run, source, fork);
+    run(["clone", "--bare", repository, origin], directory);
+    run(["remote", "add", "origin", origin]);
+    run(["remote", "add", "upstream", origin]);
+    for (const [channel, tag] of [
+      ["stable", "v0.1.9"],
+      ["nightly", "v0.1.10-nightly.20261112.1"],
+    ]) {
+      run(["checkout", "-b", `fork-build/${tag}-${fingerprint}`, fork]);
+      NodeFS.writeFileSync(
+        NodePath.join(repository, ".fork/build.json"),
+        JSON.stringify({
+          upstreamSha: source,
+          fingerprint,
+          upstreamTag: tag,
+          channel: channel === "stable" ? channel : "wrong",
+        }),
+      );
+      run(["add", "."]);
+      run(["commit", "-m", `prepare ${channel}`]);
+      run(["push", "origin", "HEAD"]);
+    }
+    run(["checkout", "main"]);
+    const outputPath = NodePath.join(directory, "output");
+    const result = NodeChildProcess.spawnSync(
+      process.execPath,
+      [
+        "--input-type=module",
+        "--eval",
+        `
+      globalThis.fetch = async (url, options) => {
+        if (options.method && options.method !== 'GET') throw new Error('Unexpected mutation');
+        if (url === 'https://api.github.com/repos/fixture/fork') return Response.json({ id: 123 });
+        if (url === 'https://api.github.com/repos/fixture/upstream/releases?per_page=100&page=1') return Response.json([
+          { tag_name: 'v0.1.9', published_at: '2026-11-12T00:00:00Z' },
+          { tag_name: 'v0.1.10-nightly.20261112.1', published_at: '2026-11-12T01:00:00Z', prerelease: true }
+        ]);
+        throw new Error('Unexpected API path: ' + url);
+      };
+      process.argv = [process.execPath, process.cwd() + '/.github/scripts/fork-maintenance.mjs', 'prepare'];
+      await import(process.argv[1]);
+    `,
+      ],
+      {
+        cwd: repository,
+        encoding: "utf8",
+        env: { ...process.env, GITHUB_REPOSITORY: "fixture/fork", GITHUB_OUTPUT: outputPath },
+      },
+    );
+    NodeAssert.equal(result.status, 1);
+    NodeAssert.match(result.stderr, /unaffected builds are available/);
+    const outputs = Object.fromEntries(
+      NodeFS.readFileSync(outputPath, "utf8")
+        .trim()
+        .split("\n")
+        .map((line) => {
+          const index = line.indexOf("=");
+          return [line.slice(0, index), line.slice(index + 1)];
+        }),
+    );
+    NodeAssert.equal(outputs.has_builds, "true");
+    const builds = JSON.parse(outputs.builds);
+    NodeAssert.equal(builds.length, 1);
+    NodeAssert.equal(builds[0].channel, "stable");
+    NodeAssert.equal(builds[0].artifact_namespace, `stable-${builds[0].ref}-`);
+    const report = JSON.parse(
+      NodeFS.readFileSync(NodePath.join(repository, "fork-maintenance-report.json"), "utf8"),
+    );
+    NodeAssert.equal(report.status, "partial-failure");
+    NodeAssert.equal(report.failures[0].channel, "nightly");
   } finally {
     NodeFS.rmSync(directory, { recursive: true, force: true });
   }

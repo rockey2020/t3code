@@ -163,45 +163,45 @@ async function verifyRepository(request = api, repositoryName = process.env.GITH
     throw new Error("Repository identity changed. Refusing to modify a recreated repository.");
 }
 
-export async function dispatchDesktopBuilds(
-  builds,
-  {
-    request = api,
-    runId = process.env.GITHUB_RUN_ID,
-    repository = process.env.GITHUB_REPOSITORY,
-  } = {},
-) {
-  if (builds.length === 0) return;
-  // Recovery is limited to the approved failed run and observed disable event.
-  if (runId === "43261831511") {
-    await verifyRepository(request, repository);
-    const path = `repos/${config.repository}/actions/workflows/416001695`;
-    const workflow = await request(path);
-    if (workflow.id !== 416001695 || workflow.path !== ".github/workflows/fork-desktop.yml")
-      throw new Error("Desktop workflow identity changed; recovery refused.");
-    if (workflow.state !== "active") {
-      if (
-        workflow.state !== "disabled_manually" ||
-        workflow.updated_at !== "2026-11-12T16:32:55.000Z"
-      )
-        throw new Error("Desktop workflow disable event changed; recovery refused.");
-      await request(`${path}/enable`, { method: "PUT" });
-      const enabled = await request(path);
-      if (
-        enabled.id !== 416001695 ||
-        enabled.path !== ".github/workflows/fork-desktop.yml" ||
-        enabled.state !== "active"
-      )
-        throw new Error("Desktop workflow recovery was not confirmed; dispatch refused.");
-      console.log(`Restored desktop workflow 416001695 for approved run ${runId}.`);
-    }
-  }
-  for (const build of builds) {
-    await request(`repos/${config.repository}/actions/workflows/fork-desktop.yml/dispatches`, {
-      method: "POST",
-      body: JSON.stringify({ ref: config.branch, inputs: build }),
-    });
-  }
+export function validateBuildDescriptor(build) {
+  if (
+    !build ||
+    !/^[0-9a-f]{40}$/.test(build.ref ?? "") ||
+    releaseChannel(build.upstream_tag) !== build.channel ||
+    !["stable", "nightly"].includes(build.channel) ||
+    build.version !== build.upstream_tag?.slice(1) ||
+    !/^[0-9a-f]{12}$/.test(build.tag?.slice(`${build.upstream_tag}-zh.`.length) ?? "") ||
+    !build.tag.startsWith(`${build.upstream_tag}-zh.`)
+  )
+    throw new Error("Invalid immutable release build descriptor");
+  const artifact_namespace = `${build.channel}-${build.ref}-`;
+  if (build.artifact_namespace !== undefined && build.artifact_namespace !== artifact_namespace)
+    throw new Error("Invalid release artifact namespace");
+  return {
+    ref: build.ref,
+    version: build.version,
+    tag: build.tag,
+    channel: build.channel,
+    upstream_tag: build.upstream_tag,
+    artifact_namespace,
+  };
+}
+
+export function buildOutputs(builds) {
+  if (!Array.isArray(builds)) throw new Error("Build descriptors must be an array");
+  const validated = builds.map(validateBuildDescriptor);
+  if (new Set(validated.map((build) => build.channel)).size !== validated.length)
+    throw new Error("Duplicate release channel");
+  return { builds: JSON.stringify(validated), has_builds: String(validated.length > 0) };
+}
+
+export function assertWorkflowSnapshot({ run, source, workflow }) {
+  if (![source, workflow].every((sha) => /^[0-9a-f]{40}$/.test(sha ?? "")))
+    throw new Error("Source and workflow must be immutable commits");
+  const sourceTree = run(["rev-parse", `${source}:.github/workflows`]);
+  const workflowTree = run(["rev-parse", `${workflow}:.github/workflows`]);
+  if (!/^[0-9a-f]{40}$/.test(sourceTree) || sourceTree !== workflowTree)
+    throw new Error("Prepared source workflow snapshot differs from the executing workflow");
 }
 
 // Upstream's workflows require its private runners and signing/deployment keys.
@@ -209,7 +209,15 @@ export async function dispatchDesktopBuilds(
 function archiveUpstreamWorkflows(original) {
   NodeFS.mkdirSync(NodePath.resolve(root, ".github/upstream-workflows"), { recursive: true });
   for (const name of NodeFS.readdirSync(NodePath.resolve(root, ".github/workflows"))) {
-    if (["fork-maintenance.yml", "fork-desktop.yml", "fork-watchdog.yml"].includes(name)) continue;
+    if (
+      [
+        "fork-maintenance.yml",
+        "fork-desktop.yml",
+        "fork-release.yml",
+        "fork-watchdog.yml",
+      ].includes(name)
+    )
+      continue;
     NodeFS.renameSync(
       NodePath.resolve(root, ".github/workflows", name),
       NodePath.resolve(root, ".github/upstream-workflows", name),
@@ -297,6 +305,7 @@ async function sync() {
 }
 
 async function prepare() {
+  for (const [name, value] of Object.entries(buildOutputs([]))) output(name, value);
   await verifyRepository();
   if (git(["status", "--porcelain"])) {
     git(["add", "-A"]);
@@ -329,11 +338,6 @@ async function prepare() {
   for (const release of selected) {
     try {
       const tag = `${release.tag_name}-zh.${fingerprint}`;
-      const existing = await api(
-        `repos/${config.repository}/releases/tags/${encodeURIComponent(tag)}`,
-        { allowMissing: true },
-      );
-      if (existing && releaseComplete(existing) && process.env.REBUILD !== "true") continue;
       git(["fetch", "--no-tags", "upstream", `refs/tags/${release.tag_name}`]);
       const source = git(["rev-parse", "FETCH_HEAD^{commit}"]);
       const branch = `fork-build/${release.tag_name}-${fingerprint}`;
@@ -348,13 +352,15 @@ async function prepare() {
           previous.channel !== release.channel
         )
           throw new Error(`Existing build branch has different provenance: ${branch}`);
-        builds.push({
-          ref: remote,
-          version: release.tag_name.slice(1),
-          tag,
-          channel: release.channel,
-          upstream_tag: release.tag_name,
-        });
+        builds.push(
+          validateBuildDescriptor({
+            ref: remote,
+            version: release.tag_name.slice(1),
+            tag,
+            channel: release.channel,
+            upstream_tag: release.tag_name,
+          }),
+        );
         continue;
       }
       const audited = auditedOverlay({
@@ -409,13 +415,15 @@ async function prepare() {
           message: `build(fork): prepare ${release.tag_name} with Chinese localization`,
         });
         git(["push", "origin", `${commit}:refs/heads/${branch}`]);
-        builds.push({
-          ref: commit,
-          version: release.tag_name.slice(1),
-          tag,
-          channel: release.channel,
-          upstream_tag: release.tag_name,
-        });
+        builds.push(
+          validateBuildDescriptor({
+            ref: commit,
+            version: release.tag_name.slice(1),
+            tag,
+            channel: release.channel,
+            upstream_tag: release.tag_name,
+          }),
+        );
       } finally {
         git(["worktree", "remove", "--force", worktree]);
       }
@@ -437,12 +445,12 @@ async function prepare() {
       2,
     ),
   );
-  await dispatchDesktopBuilds(builds);
-  console.log(`Prepared and dispatched ${builds.length} release build(s).`);
+  for (const [name, value] of Object.entries(buildOutputs(builds))) output(name, value);
+  console.log(`Prepared ${builds.length} release build(s) for the maintenance graph.`);
   if (failures.length)
     throw new AggregateError(
       failures.map((failure) => new Error(JSON.stringify(failure))),
-      "Some release channels need repair; unaffected builds were dispatched.",
+      "Some release channels need repair; unaffected builds are available to the release graph.",
     );
 }
 

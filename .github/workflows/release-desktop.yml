@@ -40,6 +40,10 @@ on:
       AZURE_TRUSTED_SIGNING_PUBLISHER_NAME:
         required: false
     inputs:
+      artifact_namespace:
+        required: false
+        default: ""
+        type: string
       mac_self_signed:
         required: false
         default: false
@@ -131,6 +135,9 @@ permissions:
 
 jobs:
   build:
+    permissions:
+      actions: read
+      contents: read
     name: Build ${{ inputs.label }}
     runs-on: ${{ inputs.runner }}
     # Windows waits for the Linux CLI archive inside its own budget (see
@@ -167,7 +174,7 @@ jobs:
         continue-on-error: true
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          name: release-dependency-verification
+          name: ${{ inputs.artifact_namespace }}release-dependency-verification
           path: ${{ runner.temp }}/pnpm-metadata
 
       - name: Setup dependencies
@@ -258,7 +265,7 @@ jobs:
         if: inputs.relay_client_tracing
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          name: relay-client-tracing-config
+          name: ${{ inputs.artifact_namespace }}relay-client-tracing-config
           path: ${{ runner.temp }}/relay-client-tracing
 
       - name: Load relay client tracing config
@@ -279,7 +286,7 @@ jobs:
       - name: Download JS bundle
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          name: js-bundle
+          name: ${{ inputs.artifact_namespace }}js-bundle
           path: apps
 
       - name: Install cargo-xwin
@@ -496,7 +503,7 @@ jobs:
         if: inputs.cli_archive && inputs.platform != 'mac'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: cli-${{ inputs.platform }}-${{ inputs.arch }}
+          name: ${{ inputs.artifact_namespace }}cli-${{ inputs.platform }}-${{ inputs.arch }}
           path: release-cli/*
           if-no-files-found: error
           # The archive is already gzip or zip; deflating it again saves under 2%.
@@ -530,8 +537,8 @@ jobs:
         timeout-minutes: 40
         env:
           GITHUB_TOKEN: ${{ github.token }}
-          ARTIFACT: cli-linux-${{ inputs.arch }}
-          LINUX_JOB: Build Linux ${{ inputs.arch }}
+          ARTIFACT: ${{ inputs.artifact_namespace }}cli-linux-${{ inputs.arch }}
+          LINUX_JOB: ${{ inputs.artifact_namespace }}Build Linux ${{ inputs.arch }}
         run: |
           $headers = @{ Authorization = "Bearer $env:GITHUB_TOKEN"; Accept = "application/vnd.github+json" }
           $run = "$env:GITHUB_API_URL/repos/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID"
@@ -546,7 +553,7 @@ jobs:
                 exit 0
               }
               $jobs = Invoke-RestMethod -Headers $headers -Uri "$run/attempts/$env:GITHUB_RUN_ATTEMPT/jobs?per_page=100"
-              $linux = $jobs.jobs | Where-Object { $_.name.EndsWith($env:LINUX_JOB) } | Select-Object -First 1
+              $linux = $jobs.jobs | Where-Object { $_.name -eq $env:LINUX_JOB -or $_.name.EndsWith(" / $env:LINUX_JOB") } | Select-Object -First 1
               if (-not $linux) {
                 # Both jobs start together, so a Linux job still missing after a
                 # few minutes means a renamed or skipped job, not a slow one.
@@ -576,7 +583,7 @@ jobs:
         if: inputs.platform == 'win'
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          name: cli-linux-${{ inputs.arch }}
+          name: ${{ inputs.artifact_namespace }}cli-linux-${{ inputs.arch }}
           path: wsl-runtime
 
       - name: Import the fixed fork macOS signing identity
@@ -812,7 +819,7 @@ jobs:
         if: inputs.cli_archive && inputs.platform == 'mac'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: cli-${{ inputs.platform }}-${{ inputs.arch }}
+          name: ${{ inputs.artifact_namespace }}cli-${{ inputs.platform }}-${{ inputs.arch }}
           path: release-cli/*
           if-no-files-found: error
           # The archive is already gzip or zip; deflating it again saves under 2%.
@@ -863,7 +870,7 @@ jobs:
         if: failure() && inputs.launch_check
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: desktop-launch-check-${{ inputs.platform }}-${{ inputs.arch }}
+          name: ${{ inputs.artifact_namespace }}desktop-launch-check-${{ inputs.platform }}-${{ inputs.arch }}
           path: ${{ runner.temp }}/desktop-launch-check
           if-no-files-found: ignore
 
@@ -891,7 +898,7 @@ jobs:
         if: inputs.verify_runner != ''
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: verify-${{ inputs.platform }}-${{ inputs.arch }}
+          name: ${{ inputs.artifact_namespace }}verify-${{ inputs.platform }}-${{ inputs.arch }}
           path: verify/*
           if-no-files-found: error
           retention-days: 1
@@ -961,7 +968,7 @@ jobs:
       - name: Upload build artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: desktop-${{ inputs.platform }}-${{ inputs.arch }}
+          name: ${{ inputs.artifact_namespace }}desktop-${{ inputs.platform }}-${{ inputs.arch }}
           path: release-publish/*
           if-no-files-found: error
           # Installers, zips and blockmaps are already compressed; deflating them again saves under 0.3%.
@@ -970,11 +977,14 @@ jobs:
       - name: Upload resource monitor
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: resource-monitor-${{ inputs.resource_key }}
+          name: ${{ inputs.artifact_namespace }}resource-monitor-${{ inputs.resource_key }}
           path: resource-monitor-publish/${{ inputs.resource_key }}/*
           if-no-files-found: error
 
   verify:
+    permissions:
+      actions: read
+      contents: read
     name: Verify
     needs: [build]
     if: inputs.verify_runner != ''
@@ -984,14 +994,14 @@ jobs:
       - name: Download verification inputs
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          name: verify-${{ inputs.platform }}-${{ inputs.arch }}
+          name: ${{ inputs.artifact_namespace }}verify-${{ inputs.platform }}-${{ inputs.arch }}
           path: verify
 
       - name: Download CLI archive
         if: inputs.cli_archive
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          name: cli-${{ inputs.platform }}-${{ inputs.arch }}
+          name: ${{ inputs.artifact_namespace }}cli-${{ inputs.platform }}-${{ inputs.arch }}
           path: release-cli
 
       - name: Verify packaged natives

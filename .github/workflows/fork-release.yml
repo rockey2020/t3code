@@ -1,0 +1,298 @@
+name: Fork reusable release
+
+on:
+  workflow_call:
+    secrets:
+      FORK_MACOS_CERTIFICATE_P12:
+        required: false
+      FORK_MACOS_CERTIFICATE_PASSWORD:
+        required: false
+    inputs:
+      artifact_namespace:
+        required: true
+        type: string
+      rebuild:
+        required: false
+        default: false
+        type: boolean
+      ref:
+        description: Prepared immutable source commit SHA
+        required: true
+        type: string
+      version:
+        description: Exact upstream package version
+        required: true
+        type: string
+      tag:
+        description: Fork release tag
+        required: true
+        type: string
+      channel:
+        description: Upstream channel
+        required: true
+        type: string
+      upstream_tag:
+        description: Exact published upstream release tag
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: write
+
+concurrency:
+  group: fork-release-${{ inputs.channel }}
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    name: Validate immutable release and workflow
+    permissions:
+      actions: read
+      contents: read
+    if: github.repository == 'rockey2020/t3code'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      build_needed: ${{ steps.check.outputs.build_needed }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.ref }}
+          fetch-depth: 1
+          sparse-checkout: |
+            .github/scripts
+            .fork
+      - name: Validate executing workflow snapshot and existing release
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+          SOURCE_REF: ${{ inputs.ref }}
+          VERSION: ${{ inputs.version }}
+          RELEASE_TAG: ${{ inputs.tag }}
+          CHANNEL: ${{ inputs.channel }}
+          UPSTREAM_TAG: ${{ inputs.upstream_tag }}
+          ARTIFACT_NAMESPACE: ${{ inputs.artifact_namespace }}
+          REBUILD: ${{ inputs.rebuild }}
+        run: |
+          git fetch --no-tags --depth=1 origin "$WORKFLOW_SHA"
+          node .github/scripts/fork-release-check.mjs
+
+  bundle:
+    permissions:
+      actions: read
+      contents: read
+    needs: preflight
+    name: Validate and build JS bundle
+    if: needs.preflight.outputs.build_needed == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      NODE_OPTIONS: --max-old-space-size=4096
+      T3CODE_TELEMETRY_CHANNEL: dev
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.ref }}
+          fetch-depth: 2
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+      - name: Validate prepared release identity
+        env:
+          SOURCE_REF: ${{ inputs.ref }}
+          VERSION: ${{ inputs.version }}
+          RELEASE_TAG: ${{ inputs.tag }}
+          CHANNEL: ${{ inputs.channel }}
+          UPSTREAM_TAG: ${{ inputs.upstream_tag }}
+        run: |
+          node --input-type=module <<'JS'
+          import { readFileSync } from 'node:fs';
+          import { releaseChannel } from './.github/scripts/fork-maintenance.mjs';
+          const build = JSON.parse(readFileSync('.fork/build.json', 'utf8'));
+          const e = process.env;
+          if (!/^[0-9a-f]{40}$/.test(e.SOURCE_REF) || releaseChannel(e.UPSTREAM_TAG) !== e.CHANNEL || e.VERSION !== e.UPSTREAM_TAG.slice(1) || e.RELEASE_TAG !== `${e.UPSTREAM_TAG}-zh.${build.fingerprint}` || build.upstreamTag !== e.UPSTREAM_TAG || build.channel !== e.CHANNEL) throw new Error('Prepared source does not match release inputs');
+          JS
+      - uses: ./.github/actions/setup-ci-deps
+        with:
+          install-args: --filter=t3... --filter=@t3tools/web... --filter=@t3tools/desktop... --filter=@t3tools/scripts...
+      - name: Check fixed macOS signing publication gates
+        run: node --test .github/scripts/fork-signing.node-test.mjs
+      - name: Check localization catalogs
+        run: node scripts/i18n-export.ts --check
+      - name: Check Chinese localization and disabled updates
+        run: |
+          set -euo pipefail
+          (cd scripts && vp test run --config ../vite.config.ts --dir . fork-i18n.test.ts mac-self-signing.test.ts build-desktop-artifact.test.ts --maxWorkers=1)
+          vp run --filter @t3tools/desktop ensure:electron
+          (cd apps/desktop && vp test run src/window/menuLocalization.test.ts src/updates/forkUpdatePolicy.test.ts --maxWorkers=1)
+          (cd apps/server && vp test run src/cloud/forkUpdatePolicy.test.ts src/environment/ServerEnvironment.test.ts --maxWorkers=1)
+          (cd apps/web && vp test run --project unit src/i18n/locale.test.ts --maxWorkers=1)
+      - name: Check live language switching
+        timeout-minutes: 10
+        run: |
+          set -euo pipefail
+          node apps/web/node_modules/playwright/cli.js install --only-shell chromium
+          browser=$(find "$HOME/.cache/ms-playwright" -name chrome-headless-shell -type f -print -quit)
+          if [[ -z "$browser" ]]; then echo "Chromium was not installed" >&2; exit 1; fi
+          if ldd "$browser" | grep -q 'not found'; then
+            node apps/web/node_modules/playwright/cli.js install-deps chromium
+          fi
+          (cd apps/web && vp test run --project browser src/i18n/useTranslation.browser.test.tsx --maxWorkers=1)
+      - name: Set exact upstream version
+        env:
+          VERSION: ${{ inputs.version }}
+        run: node scripts/update-release-package-versions.ts "$VERSION"
+      - name: Build shared desktop and web bundles
+        run: vp run build:desktop:bundle
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ${{ inputs.artifact_namespace }}js-bundle
+          path: |
+            apps/server/dist
+            apps/desktop/dist-electron
+          if-no-files-found: error
+          retention-days: 7
+
+  # This is an embedded Windows component, not a third desktop distribution.
+  # Building it from this fork keeps WSL localized with app updates disabled.
+  wsl:
+    permissions:
+      actions: read
+      contents: read
+    name: ${{ inputs.artifact_namespace }}Build Linux x64
+    needs: bundle
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      NODE_OPTIONS: --max-old-space-size=4096
+      T3CODE_TELEMETRY_CHANNEL: dev
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.ref }}
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+      - uses: ./.github/actions/setup-ci-deps
+        with:
+          install-args: --filter=t3... --filter=@t3tools/scripts...
+      - uses: actions/download-artifact@v8
+        with:
+          name: ${{ inputs.artifact_namespace }}js-bundle
+          path: apps
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
+        with:
+          toolchain: stable
+      - uses: ./.github/actions/setup-apt-mirrors
+      - name: Ensure Linux archive dependency
+        timeout-minutes: 5
+        run: command -v patchelf || { sudo apt-get update && sudo apt-get install -y patchelf; }
+      - name: Build Windows WSL runtime
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          node scripts/update-release-package-versions.ts "$VERSION"
+          cargo build --locked --release --manifest-path native/resource-monitor/Cargo.toml
+          mkdir -p "$RUNNER_TEMP/cli-resource-monitor/linux-x64"
+          cp native/resource-monitor/target/release/t3-resource-monitor "$RUNNER_TEMP/cli-resource-monitor/linux-x64/"
+          node apps/server/scripts/cli.ts build-exe --verbose
+          node scripts/build-cli-archive.ts --platform linux --arch x64 --version "$VERSION" --resource-monitor-dir "$RUNNER_TEMP/cli-resource-monitor" --output-dir release-cli
+          node scripts/smoke-cli-archive.ts --archive release-cli/* --expect-version "$VERSION"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ${{ inputs.artifact_namespace }}cli-linux-x64
+          path: release-cli/*
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
+
+  mac:
+    permissions:
+      actions: read
+      contents: read
+    name: macOS ARM64
+    needs: bundle
+    uses: ./.github/workflows/release-desktop.yml
+    secrets:
+      FORK_MACOS_CERTIFICATE_P12: ${{ secrets.FORK_MACOS_CERTIFICATE_P12 }}
+      FORK_MACOS_CERTIFICATE_PASSWORD: ${{ secrets.FORK_MACOS_CERTIFICATE_PASSWORD }}
+    with:
+      artifact_namespace: ${{ inputs.artifact_namespace }}
+      mac_self_signed: true
+      label: macOS arm64
+      runner: macos-15
+      platform: mac
+      target: dmg
+      arch: arm64
+      rust_target: aarch64-apple-darwin
+      resource_key: darwin-arm64
+      ref: ${{ inputs.ref }}
+      version: ${{ inputs.version }}
+      release_channel: ${{ inputs.channel }}
+      launch_check: true
+      relay_client_tracing: false
+      clerk_publishable_key: ""
+      clerk_jwt_template: ""
+      clerk_cli_oauth_client_id: ""
+      relay_url: ""
+
+  windows:
+    permissions:
+      actions: read
+      contents: read
+    name: Windows x64
+    needs: [bundle, wsl]
+    uses: ./.github/workflows/release-desktop.yml
+    with:
+      artifact_namespace: ${{ inputs.artifact_namespace }}
+      label: Windows x64
+      runner: ubuntu-24.04
+      verify_runner: windows-2025
+      platform: win
+      target: nsis
+      arch: x64
+      rust_target: x86_64-pc-windows-msvc
+      resource_key: win32-x64
+      ref: ${{ inputs.ref }}
+      version: ${{ inputs.version }}
+      release_channel: ${{ inputs.channel }}
+      relay_client_tracing: false
+      clerk_publishable_key: ""
+      clerk_jwt_template: ""
+      clerk_cli_oauth_client_id: ""
+      relay_url: ""
+
+  publish:
+    name: Publish both verified desktop packages
+    needs: [mac, windows]
+    if: ${{ needs.mac.result == 'success' && needs.windows.result == 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.ref }}
+          sparse-checkout: |
+            .github/scripts
+            .fork
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: ${{ inputs.artifact_namespace }}desktop-*
+          merge-multiple: true
+          path: release-publish
+      - name: Publish installers and checksums without update feeds
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+          SOURCE_REF: ${{ inputs.ref }}
+          CHANNEL: ${{ inputs.channel }}
+          UPSTREAM_TAG: ${{ inputs.upstream_tag }}
+        run: node .github/scripts/fork-publish.mjs

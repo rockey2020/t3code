@@ -890,6 +890,9 @@
     "Retry now": "立即重试"
   },
   "apps/web/src/components/chat/threadPanelUi.messages.ts": {
+    "Preparing fix": "正在准备修复",
+    "Could not open the parent thread": "无法打开父会话",
+    "The parent thread was deleted": "父会话已被删除",
     "Resolve the conflicts in this thread": "在此会话中解决冲突",
     "Fix the failing checks in this thread": "在此会话中修复失败的检查",
     "Added to the composer": "已添加到输入框",
@@ -2724,6 +2727,16 @@
     "Thread": "会话"
   },
   "apps/web/src/components/coreUi.messages.ts": {
+    "No active threads in these projects": "这些项目中没有活跃会话",
+    "No active threads in {project}": "{project} 中没有活跃会话",
+    "Title generation failed.": "标题生成失败。",
+    "Failed to regenerate {failed} of {total} thread titles": "{total} 个会话中有 {failed} 个标题重新生成失败",
+    "Title kept": "已保留标题",
+    "The current title already fits this thread.": "当前标题已适合此会话。",
+    "Titles kept": "已保留标题",
+    "Kept {kept} of {total} titles": "已保留 {total} 个标题中的 {kept} 个",
+    "The current titles already fit these threads.": "当前标题已适合这些会话。",
+    "Those titles already fit their threads.": "这些标题已适合对应的会话。",
     "Thread copied": "已复制会话",
     "Failed to copy thread": "无法复制会话",
     "PR link copied": "已复制 PR 链接",
@@ -3271,6 +3284,8 @@
   },
   "apps/web/src/components/files/filesUi.messages.ts": {
     "File contents": "文件内容",
+    "Resizing preview...": "正在调整预览大小…",
+    "This row or column could not be resized.": "无法调整此行或列的大小。",
     "This sheet is empty.": "此工作表为空。",
     "Preview limited to 250,000 rows, 1,024 columns, and bounded cell text.": "预览最多显示 250,000 行、1,024 列，并限制单元格文本长度。",
     "Limited to 500 rows and 50 columns.": "最多显示 500 行和 50 列。",
@@ -3978,6 +3993,7 @@
     "Output is no longer available.": "输出已不可用。"
   },
   "apps/web/src/components/mcp/mcpUi.messages.ts": {
+    "Get {app}": "获取 {app}",
     "Use T3 Code in another app (MCP) · {name}": "在其他应用中使用 T3 Code（MCP）· {name}",
     "Connect to an environment first.": "请先连接一个环境。",
     "T3 Connect is not available in this build.": "此版本不支持 T3 Connect。",
@@ -4516,6 +4532,7 @@
     "Check out": "检出"
   },
   "apps/web/src/components/pullRequest/pullRequestUi.messages.ts": {
+    "checks@@count": "项检查",
     "Resolved conversation": "已解决的讨论",
     "{count} resolved conversations": "{count} 条已解决的讨论",
     "Context, no code": "背景说明，无代码",
@@ -5440,6 +5457,9 @@
     "Double press": "按两次"
   },
   "apps/web/src/components/settings/settingsCode.messages.ts": {
+    "Different actions across checkouts": "不同工作副本的操作不一致",
+    "Narrow the selection above to one checkout to edit its list. Adding an action here adds it to every selected checkout.": "请在上方缩小范围，选择一个工作副本来编辑其操作列表。在此处添加操作会将其添加到所有选中的工作副本。",
+    "Writer model not saved": "写作模型未保存",
     "Offer {label} when adding or publishing a project": "添加或发布项目时提供 {label}",
     "Offer when adding or publishing a project": "添加或发布项目时提供此选项",
     "No actions configured.": "尚未配置操作。",
@@ -6842,6 +6862,14 @@
     "Everything": "全部"
   },
   "apps/web/src/components/settings/settingsDevices.messages.ts": {
+    "Could not reach the server": "无法连接服务器",
+    "You cannot check secrets on this environment": "你无权检查此环境中的凭据",
+    "Check that the secret resolves": "检查凭据能否读取",
+    "Checking the secret": "正在检查凭据",
+    "Secret resolved": "凭据读取成功",
+    "{label} failed: {detail}": "{label}失败：{detail}",
+    "{label} resolved": "{label}读取成功",
+    "Check {label}": "检查{label}",
     "Stored secret, enter a new value to replace": "已保存凭据，输入新值可替换",
     "Not set": "未设置",
     "Value": "值",
@@ -7529,6 +7557,7 @@
     "T3 Code on {label} stops, rebuilds its database, and starts again. It will be offline for about {minutes} min. Running agents stop when it restarts.": "{label} 上的 T3 Code 会停止、重建数据库后再次启动，大约离线 {minutes} 分钟。重启时正在运行的智能体会停止。"
   },
   "apps/web/src/components/settings/settingsMessages.ts": {
+    "Keep awake while agents work": "智能体工作时保持唤醒",
     "Screen reader window title": "屏幕阅读器窗口标题",
     "Preferences": "偏好设置",
     "More": "更多",
@@ -7755,6 +7784,9 @@
     "Screen reader announcements": "屏幕阅读器播报"
   },
   "apps/web/src/components/settings/settingsPanels.messages.ts": {
+    "Keep awake while agents work": "智能体工作时保持唤醒",
+    "keep awake while agents work": "智能体工作时保持唤醒",
+    "Stop the computer from going to sleep while agents are working, and let it sleep once they finish. Closing a laptop lid still puts it to sleep.": "智能体工作时阻止电脑进入睡眠，工作结束后允许电脑睡眠。合上笔记本电脑屏幕仍会使其进入睡眠。",
     "Screen reader": "屏幕阅读器",
     "Application update checks and automatic updates are disabled in this build.": "此版本已禁用应用更新检查和自动更新。",
     "Could not download update": "无法下载更新",
@@ -7918,6 +7950,7 @@
     "Install update {version} and restart T3 Code?\n\nAny running tasks will be interrupted. Make sure you're ready before continuing.": "安装更新 {version} 并重启 T3 Code？\n\n正在运行的任务会被中断。请确认已准备好再继续。"
   },
   "apps/web/src/components/settings/settingsProviderAccounts.messages.ts": {
+    "Update Codex": "更新 Codex",
     "Manage usage": "管理用量",
     "We do not recommend managing multiple {providerName} accounts in T3 Code.": "不建议在 T3 Code 中管理多个 {providerName} 账户。",
     "More info": "更多信息",
@@ -8606,6 +8639,11 @@
     "Refresh": "刷新"
   },
   "apps/web/src/components/settings/settingsShell.messages.ts": {
+    "in@@settings-scope": "位于",
+    "Checkout scope": "工作副本范围",
+    "Unavailable checkout": "工作副本不可用",
+    "All checkouts": "所有工作副本",
+    "Search checkouts": "搜索工作副本",
     "Advanced": "高级",
     "Applying settings for {projects} across {environments}": "正在为{environments}中的{projects}应用设置",
     "Applying settings for {projects} on {environments}": "正在为{environments}上的{projects}应用设置",

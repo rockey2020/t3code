@@ -170,7 +170,7 @@ jobs:
     with:
       mac_self_signed: true
       label: macOS arm64
-      runner: macos-26
+      runner: macos-15
       platform: mac
       target: dmg
       arch: arm64

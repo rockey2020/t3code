@@ -2,8 +2,8 @@
   "upstream": "pingdotgg/t3code",
   "upstreamTag": "v0.1.9",
   "upstreamSha": "24e77473ecf41bc1f7142529c7911c1c1aae1d76",
-  "auditedSourceSha": "8510ba89a41a6c4c039464e7e5ebbd4abcdf0a5a",
-  "forkSha": "aee2ecd01d4b65640e748640c9d2d8e450bd4077",
-  "fingerprint": "38c890a0c46e",
+  "auditedSourceSha": "1b95beb181e3e602a3077656b5b73bcb78ee65b9",
+  "forkSha": "9ead6cd4293d266fd4bd63a5f8a85e6bb6396334",
+  "fingerprint": "5f0c570d0f6d",
   "channel": "stable"
 }

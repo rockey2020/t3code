@@ -147,13 +147,7 @@ export function ProviderModelsSection({
   const scrollToSlugRef = useRef<string | null>(null);
   const hiddenModelSet = new Set(hiddenModels);
   const favoriteModelSet = new Set(favoriteModels);
-  const reportedSlugs = new Set(models.map((model) => model.slug));
-  // A favorite the provider no longer reports (disabled, signed out, model removed)
-  // still needs a row, or its star could never be cleared.
-  const unreportedFavoriteModels = favoriteModels.flatMap((slug): ServerProviderModel[] =>
-    reportedSlugs.has(slug) ? [] : [{ slug, name: slug, isCustom: false, capabilities: null }],
-  );
-  const displayModels = groupModelsForDisplay([...models, ...unreportedFavoriteModels], {
+  const displayModels = groupModelsForDisplay(models, {
     favoriteModels: favoriteModelSet,
     hiddenModels: hiddenModelSet,
     modelOrder,

@@ -301,7 +301,7 @@ function parseTimestampMs(isoDate: string): number {
   return Number.isNaN(parsed) ? 0 : parsed;
 }
 
-function sortThreadsForListV2<
+export function sortThreadsForListV2<
   T extends {
     readonly id: string;
     readonly createdAt: string;

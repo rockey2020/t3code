@@ -1,8 +1,6 @@
 import * as NodeUtil from "node:util";
 import {
-  VcsProcessExitError,
   VcsProcessSpawnError,
-  VcsProcessTimeoutError,
   type SourceControlProviderAuth,
   type SourceControlProviderDiscoveryItem,
   type SourceControlProviderInfo,
@@ -192,9 +190,6 @@ function isCliRemoteRefinementSpec(
   return spec.type === "cli" && spec.refineUnknownRemote !== undefined;
 }
 
-const isVcsProcessTimeoutError = Schema.is(VcsProcessTimeoutError);
-const isVcsProcessExitError = Schema.is(VcsProcessExitError);
-
 function probeCli(input: {
   readonly spec: SourceControlCliDiscoverySpec;
   readonly process: SourceControlHost.SourceControlHost["Service"]["process"];
@@ -227,13 +222,18 @@ function probeCli(input: {
       ),
       Effect.catch((cause) =>
         Effect.gen(function* () {
+          const installHint = yield* unavailableInstallHint(
+            input.spec.executable,
+            input.spec.installHint,
+            cause,
+          );
           return {
             kind: input.spec.kind,
             label: input.spec.label,
             executable: input.spec.executable,
             status: "missing" as const,
             version: Option.none<string>(),
-            installHint: yield* failedProbeHint(input.spec, cause),
+            installHint,
             detail: detailFromCause(cause),
           } satisfies DiscoveryProbeResult;
         }),
@@ -319,7 +319,10 @@ export function probeSourceControlProvider(input: {
       ([item, auth]) =>
         ({
           ...item,
-          auth: item.status === "available" ? auth : unknownAuth(item.installHint),
+          auth:
+            item.status === "available"
+              ? auth
+              : unknownAuth("Hosting integration command was not found on the server PATH."),
         }) satisfies SourceControlProviderDiscoveryItem,
     ),
   );
@@ -341,7 +344,7 @@ export function isMissingExecutable(error: unknown): boolean {
 // Intel-only `gh` on Apple Silicon without Rosetta.
 const BAD_CPU_TYPE_ERRNO = -86;
 
-const unavailableInstallHint = Effect.fn("discovery.unavailableInstallHint")(function* (
+export const unavailableInstallHint = Effect.fn("discovery.unavailableInstallHint")(function* (
   executable: string,
   installHint: string,
   cause: unknown,
@@ -360,35 +363,6 @@ const unavailableInstallHint = Effect.fn("discovery.unavailableInstallHint")(fun
   const path = resolveExecutable(executable, platform, yield* HostProcess.Environment);
   const architecture = yield* HostProcess.Architecture;
   return `\`${path ?? executable}\` is built for another CPU architecture, so this ${architecture} machine cannot run it. Remove or replace it. ${installHint}`;
-});
-
-/** An installed CLI whose version probe failed needs a repair, not install advice. */
-function probeFailureHint(
-  probe: { readonly executable: string; readonly versionArgs: ReadonlyArray<string> },
-  cause: unknown,
-): string {
-  const command = `\`${[probe.executable, ...probe.versionArgs].join(" ")}\``;
-  const outcome = isVcsProcessTimeoutError(cause)
-    ? `timed out after ${cause.timeoutMs}ms`
-    : isVcsProcessExitError(cause)
-      ? `exited with status ${cause.exitCode}`
-      : "failed";
-  return `${command} ${outcome}. Check the \`${probe.executable}\` that the server's PATH resolves.`;
-}
-
-export const failedProbeHint = Effect.fn("discovery.failedProbeHint")(function* (
-  probe: {
-    readonly executable: string;
-    readonly versionArgs: ReadonlyArray<string>;
-    readonly installHint: string;
-  },
-  cause: unknown,
-) {
-  const hint = yield* unavailableInstallHint(probe.executable, probe.installHint, cause);
-  // A wrong-CPU hint or an absent executable keeps its advice; other failures need repair.
-  return hint !== probe.installHint || isMissingExecutable(cause)
-    ? hint
-    : probeFailureHint(probe, cause);
 });
 
 class UnknownRemoteUnanswered extends Schema.TaggedError<UnknownRemoteUnanswered>()(

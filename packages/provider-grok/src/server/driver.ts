@@ -32,7 +32,6 @@ import { mergeProviderInstanceEnvironment } from "@t3tools/provider-core/server/
 import { discoverGrokSkills } from "./skills.ts";
 import {
   homebrewOwnershipFromCommandPath,
-  isNixStoreCommandPath,
   makeCachedProviderMaintenanceResolution,
   makeManualOnlyProviderMaintenanceCapabilities,
   makeProviderMaintenanceCapabilities,
@@ -54,7 +53,7 @@ const GROK_NPM_PACKAGE = "@xai-official/grok";
 // `grok update` installs under `GROK_HOME` from the resolved executable and instance environment.
 // npm 12 blocks the postinstall that moves the new binary in, yet exits 0, so allow it by env.
 // Mise and Homebrew casks upgrade through their manager; `grok update` would install a second
-// copy, so a cask its brew cannot vouch for stays manual, as does a Nix store install.
+// copy, so a cask its brew cannot vouch for stays manual.
 const UPDATE: ProviderMaintenanceCapabilitiesResolver = {
   resolve: Effect.fn("resolveGrokMaintenance")(function* (context) {
     if (!context) {
@@ -69,13 +68,6 @@ const UPDATE: ProviderMaintenanceCapabilitiesResolver = {
       context,
     );
     if (mise) return mise;
-    if ([context.resolvedCommandPath, context.realCommandPath].some(isNixStoreCommandPath)) {
-      return makeManualOnlyProviderMaintenanceCapabilities({
-        provider: DRIVER_KIND,
-        packageName: GROK_NPM_PACKAGE,
-        installPath: context.realCommandPath,
-      });
-    }
     const homebrew = homebrewOwnershipFromCommandPath(context.realCommandPath);
     // Only a cask is Grok's: a formula keg such as `node` holding an npm global is not.
     if (homebrew?.kind === "cask") {

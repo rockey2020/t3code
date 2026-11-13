@@ -5,8 +5,6 @@ export interface PreparingComposerImage {
   readonly name: string;
   /** The uncompressed source, thumbnailed so the placeholder shows the image itself. */
   readonly file: File;
-  /** Looks like an image the draft already has: it holds its slot but shows no tile. */
-  readonly hidden: boolean;
 }
 
 const NO_PREPARING_IMAGES: ReadonlyArray<PreparingComposerImage> = [];
@@ -26,14 +24,8 @@ export function usePreparingComposerImages(targetKey: string) {
   );
 }
 
-export function getPreparingComposerImages(
-  targetKey: string,
-): ReadonlyArray<PreparingComposerImage> {
-  return usePreparingComposerImageStore.getState().byTargetKey[targetKey] ?? NO_PREPARING_IMAGES;
-}
-
 export function countPreparingComposerImages(targetKey: string): number {
-  return getPreparingComposerImages(targetKey).length;
+  return usePreparingComposerImageStore.getState().byTargetKey[targetKey]?.length ?? 0;
 }
 
 export function addPreparingComposerImages(

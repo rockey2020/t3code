@@ -193,7 +193,7 @@ const authorizeParams = (clientId: string, redirect = "http://localhost:51234/ca
   resource: `${ORIGIN}/mcp`,
 });
 
-it.effect("derives discovery metadata from the origin the client reached", () =>
+it.live("derives discovery metadata from the origin the client reached", () =>
   withRoutes((handler) =>
     Effect.gen(function* () {
       const resource = yield* handler(at("/.well-known/oauth-protected-resource/mcp"));
@@ -215,7 +215,7 @@ it.effect("derives discovery metadata from the origin the client reached", () =>
   ),
 );
 
-it.effect("registers loopback and https clients and never redirects for an unverified client", () =>
+it.live("registers loopback and https clients and never redirects for an unverified client", () =>
   withRoutes((handler) =>
     Effect.gen(function* () {
       for (const refused of [
@@ -622,7 +622,7 @@ it.live("an app approval code approves only an app sign-in, at its own level", (
   ),
 );
 
-it.effect(
+it.live(
   "sends an app sign-in on the linked tunnel to the hosted app, and a link to its own page",
   () =>
     Effect.gen(function* () {

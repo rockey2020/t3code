@@ -2,7 +2,6 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { ProviderInstanceId } from "@t3tools/contracts";
 import { totalTokens } from "@t3tools/provider-core/server/usage";
 import * as HostProcess from "@t3tools/shared/HostProcess";
-import { SpawnExecutableResolution } from "@t3tools/shared/shell";
 import * as Effect from "effect/Effect";
 import * as Deferred from "effect/Deferred";
 import * as Fiber from "effect/Fiber";
@@ -191,9 +190,6 @@ it("handles malformed and partial data and rejects unsupported timestamps or sch
   ).toEqual([]);
 });
 
-const AWAIT_REFRESH = { awaitRefresh: true };
-const onPath = Effect.provideService(SpawnExecutableResolution, (command: string) => command);
-
 describe("Muse history discovery", () => {
   it.effect.each([undefined, "/custom/xdg-data"])(
     "uses the initialized home with XDG_DATA_HOME=%s and closes without starting a session",
@@ -208,15 +204,12 @@ describe("Muse history discovery", () => {
           } as unknown as MuseSdk.MuseSdkHost),
         );
         if (museUsageReader.kind !== "transcripts") throw new Error("Expected a transcript reader");
-        const directories = yield* museUsageReader.directories(
-          {
-            instanceId: ProviderInstanceId.make("muse-other"),
-            configured: true,
-            config: decodeSettings({ binaryPath: "~/bin/custom-muse" }),
-            environment: { XDG_DATA_HOME: xdg, MUSE_NO_AUTO_UPDATE: "0" },
-          },
-          AWAIT_REFRESH,
-        );
+        const directories = yield* museUsageReader.directories({
+          instanceId: ProviderInstanceId.make("muse-other"),
+          configured: true,
+          config: decodeSettings({ binaryPath: "~/bin/custom-muse" }),
+          environment: { XDG_DATA_HOME: xdg, MUSE_NO_AUTO_UPDATE: "0" },
+        });
         expect(directories).toEqual([
           { dir: path.join("/native/configured-home", "sessions"), fileName: "session.jsonl" },
         ]);
@@ -233,34 +226,12 @@ describe("Muse history discovery", () => {
         expect(close).toHaveBeenCalledOnce();
       }).pipe(
         Effect.provide([NodeServices.layer, MuseUsageHome.layer]),
-        onPath,
         Effect.provideService(HostProcess.HomeDirectory, "/test-home"),
         Effect.provideService(HostProcess.Environment, {
           PATH: "/host/bin",
           XDG_DATA_HOME: "/host/data",
         }),
       ),
-  );
-
-  it.effect("reports no history without starting Muse when its CLI is not installed", () =>
-    Effect.gen(function* () {
-      using create = vi.spyOn(MuseSdk, "createMuseSdkHostEffect");
-      if (museUsageReader.kind !== "transcripts") throw new Error("Expected a transcript reader");
-      const directories = yield* museUsageReader.directories(
-        {
-          instanceId: ProviderInstanceId.make("muse"),
-          configured: false,
-          config: undefined,
-          environment: {},
-        },
-        { awaitRefresh: false },
-      );
-      expect(directories).toEqual([]);
-      expect(create).not.toHaveBeenCalled();
-    }).pipe(
-      Effect.provide([NodeServices.layer, MuseUsageHome.layer]),
-      Effect.provideService(SpawnExecutableResolution, () => undefined),
-    ),
   );
 
   it.effect("does not guess a directory when initialization fails", () =>
@@ -273,17 +244,14 @@ describe("Muse history discovery", () => {
           ),
         );
       if (museUsageReader.kind !== "transcripts") throw new Error("Expected a transcript reader");
-      const directories = yield* museUsageReader.directories(
-        {
-          instanceId: ProviderInstanceId.make("muse"),
-          configured: false,
-          config: undefined,
-          environment: {},
-        },
-        AWAIT_REFRESH,
-      );
+      const directories = yield* museUsageReader.directories({
+        instanceId: ProviderInstanceId.make("muse"),
+        configured: false,
+        config: undefined,
+        environment: {},
+      });
       expect(directories).toEqual([]);
-    }).pipe(Effect.provide([NodeServices.layer, MuseUsageHome.layer]), onPath),
+    }).pipe(Effect.provide([NodeServices.layer, MuseUsageHome.layer])),
   );
 
   it.effect(
@@ -305,24 +273,21 @@ describe("Muse history discovery", () => {
           config: decodeSettings({ binaryPath: "~/bin/muse", enabled: false }),
           environment: { PATH: "/bin", XDG_DATA_HOME: "/data" },
         };
-        const first = yield* museUsageReader.directories(instance, AWAIT_REFRESH);
-        const second = yield* museUsageReader.directories(
-          {
-            ...instance,
-            instanceId: ProviderInstanceId.make("another-account"),
-            config: decodeSettings({
-              binaryPath: path.join("/test-home", "bin/muse"),
-              enabled: true,
-            }),
-            environment: {
-              XDG_DATA_HOME: "/data",
-              PATH: "/bin",
-              UNUSED: undefined,
-              META_API_KEY: "ignored",
-            },
+        const first = yield* museUsageReader.directories(instance);
+        const second = yield* museUsageReader.directories({
+          ...instance,
+          instanceId: ProviderInstanceId.make("another-account"),
+          config: decodeSettings({
+            binaryPath: path.join("/test-home", "bin/muse"),
+            enabled: true,
+          }),
+          environment: {
+            XDG_DATA_HOME: "/data",
+            PATH: "/bin",
+            UNUSED: undefined,
+            META_API_KEY: "ignored",
           },
-          AWAIT_REFRESH,
-        );
+        });
         expect(second).toEqual(first);
         expect(first).toEqual([
           { dir: path.join("/native/home", "sessions"), fileName: "session.jsonl" },
@@ -331,7 +296,6 @@ describe("Muse history discovery", () => {
         expect(close).toHaveBeenCalledOnce();
       }).pipe(
         Effect.provide([NodeServices.layer, MuseUsageHome.layer]),
-        onPath,
         Effect.provideService(HostProcess.HomeDirectory, "/test-home"),
         Effect.provideService(HostProcess.Environment, {}),
       ),
@@ -354,26 +318,20 @@ describe("Muse history discovery", () => {
           config: undefined,
           environment: {},
         };
-        const first = yield* museUsageReader.directories(instance, AWAIT_REFRESH);
+        const first = yield* museUsageReader.directories(instance);
         expect(
-          yield* museUsageReader.directories(
-            {
-              ...instance,
-              config: decodeSettings({ binaryPath: "custom-muse" }),
-            },
-            AWAIT_REFRESH,
-          ),
-        ).toEqual(first);
-        const changed = yield* museUsageReader.directories(
-          {
+          yield* museUsageReader.directories({
             ...instance,
-            environment: { XDG_DATA_HOME: "/other-data" },
-          },
-          AWAIT_REFRESH,
-        );
+            config: decodeSettings({ binaryPath: "custom-muse" }),
+          }),
+        ).toEqual(first);
+        const changed = yield* museUsageReader.directories({
+          ...instance,
+          environment: { XDG_DATA_HOME: "/other-data" },
+        });
         expect(changed).not.toEqual(first);
         const inherited = yield* museUsageReader
-          .directories(instance, AWAIT_REFRESH)
+          .directories(instance)
           .pipe(
             Effect.provideService(HostProcess.Environment, { XDG_DATA_HOME: "/new-host-data" }),
           );
@@ -382,12 +340,11 @@ describe("Muse history discovery", () => {
         expect(create).toHaveBeenCalledTimes(4);
       }).pipe(
         Effect.provide([NodeServices.layer, MuseUsageHome.layer]),
-        onPath,
         Effect.provideService(HostProcess.Environment, { XDG_DATA_HOME: "/host-data" }),
       ),
   );
 
-  it.effect("reports pending discovery without waiting and shares it with awaiting reads", () =>
+  it.effect("shares pending initialization across concurrent directory reads", () =>
     Effect.gen(function* () {
       const started = yield* Deferred.make<void>();
       const ready = yield* Deferred.make<MuseSdk.MuseSdkHost>();
@@ -404,21 +361,11 @@ describe("Muse history discovery", () => {
         config: undefined,
         environment: {},
       };
-      const pending = [{ dir: "muse", refreshing: true }];
-      expect(yield* museUsageReader.directories(instance, { awaitRefresh: false })).toEqual(
-        pending,
-      );
-      yield* Deferred.await(started);
       const reads = yield* Effect.all(
-        [
-          museUsageReader.directories(instance, AWAIT_REFRESH),
-          museUsageReader.directories(instance, AWAIT_REFRESH),
-        ],
+        [museUsageReader.directories(instance), museUsageReader.directories(instance)],
         { concurrency: "unbounded" },
       ).pipe(Effect.forkChild);
-      expect(yield* museUsageReader.directories(instance, { awaitRefresh: false })).toEqual(
-        pending,
-      );
+      yield* Deferred.await(started);
       yield* Deferred.succeed(ready, {
         initializeResult: { museHome: "/native/home" },
         close,
@@ -426,17 +373,9 @@ describe("Muse history discovery", () => {
       const [first, second] = yield* Fiber.join(reads);
       expect(first).toEqual(second);
       expect(first).toHaveLength(1);
-      expect(yield* museUsageReader.directories(instance, { awaitRefresh: false })).toEqual(first);
-      const uninstalled = Effect.provideService(SpawnExecutableResolution, () => undefined);
-      expect(
-        yield* museUsageReader.directories(instance, { awaitRefresh: false }).pipe(uninstalled),
-      ).toEqual(first);
-      expect(yield* museUsageReader.directories(instance, AWAIT_REFRESH).pipe(uninstalled)).toEqual(
-        first,
-      );
       expect(create).toHaveBeenCalledOnce();
       expect(close).toHaveBeenCalledOnce();
-    }).pipe(Effect.provide([NodeServices.layer, MuseUsageHome.layer]), onPath),
+    }).pipe(Effect.provide([NodeServices.layer, MuseUsageHome.layer])),
   );
 
   it.effect("briefly caches failed discovery and retries after installation recovers", () =>
@@ -461,12 +400,12 @@ describe("Muse history discovery", () => {
         config: undefined,
         environment: {},
       };
-      expect(yield* museUsageReader.directories(instance, AWAIT_REFRESH)).toEqual([]);
-      expect(yield* museUsageReader.directories(instance, { awaitRefresh: false })).toEqual([]);
+      expect(yield* museUsageReader.directories(instance)).toEqual([]);
+      expect(yield* museUsageReader.directories(instance)).toEqual([]);
       expect(create).toHaveBeenCalledOnce();
       yield* TestClock.adjust("30 seconds");
-      expect(yield* museUsageReader.directories(instance, AWAIT_REFRESH)).toHaveLength(1);
+      expect(yield* museUsageReader.directories(instance)).toHaveLength(1);
       expect(create).toHaveBeenCalledTimes(2);
-    }).pipe(Effect.provide([NodeServices.layer, MuseUsageHome.layer]), onPath),
+    }).pipe(Effect.provide([NodeServices.layer, MuseUsageHome.layer])),
   );
 });

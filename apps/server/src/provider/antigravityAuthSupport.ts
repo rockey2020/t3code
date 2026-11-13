@@ -467,14 +467,7 @@ export function buildAntigravityAcpSpawnInput(input: {
     // The agy CLI has no harness sibling and serves ACP through its `acp` subcommand.
     args:
       input.installation.harnessPath === null
-        ? [
-            "acp",
-            "--gemini-dir",
-            input.profile.geminiHome,
-            "--app-data-dir",
-            // The CLI joins this beneath gemini-dir, including when the value is absolute.
-            "antigravity-acp",
-          ]
+        ? ["acp"]
         : input.profile.platform === "linux"
           ? ["--uid="]
           : [],

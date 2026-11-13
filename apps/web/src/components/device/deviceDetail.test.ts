@@ -25,9 +25,6 @@ describe("device status details", () => {
   it("translates the decoder prefix and preserves unknown device details", () => {
     setLocale("zh-CN");
     expect(deviceDetail("Video decoder: bad h264 profile")).toBe("视频解码器：bad h264 profile");
-    expect(deviceDetail("Device lease ended: returned / session:42")).toBe(
-      "设备租用已结束：returned / session:42",
-    );
     expect(deviceDetail("Unknown device detail / path: unchanged")).toBe(
       "Unknown device detail / path: unchanged",
     );

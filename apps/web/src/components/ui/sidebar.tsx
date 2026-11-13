@@ -19,7 +19,6 @@ import {
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { useResizeDrag } from "~/hooks/useResizeDrag";
 import { useMediaQuery } from "~/hooks/useMediaQuery";
-import { useClientSettings } from "~/hooks/useSettings";
 import {
   getLocalStorageItem,
   setLocalStorageItem,
@@ -41,7 +40,7 @@ type SidebarContextProps = {
   setOpen: (open: boolean) => void;
   openMobile: boolean;
   mobileSheetMounted: boolean;
-  setMobileSheetMounted: (mounted: boolean) => void;
+  setMobileSheetElement: (element: HTMLDivElement | null) => void;
   setOpenMobile: (open: boolean) => void;
   isMobile: boolean;
   toggleSidebar: () => void;
@@ -99,12 +98,6 @@ function useSidebar() {
 function useSidebarVisibility() {
   const { isMobile, open, openMobile } = useSidebar();
   return isMobile ? openMobile : open;
-}
-
-/** Whether the mobile sidebar sheet covers the page; false outside a SidebarProvider. */
-function useMobileSidebarSheetMounted() {
-  const context = React.use(SidebarContext);
-  return context !== null && context.isMobile && context.mobileSheetMounted;
 }
 
 // The `max-md` breakpoint, also read when a shortcut fires.
@@ -207,13 +200,9 @@ function SidebarProvider({
     store.getSnapshot,
   );
   const [mobileSheetMounted, setMobileSheetMounted] = React.useState(false);
-  if (openMobile && !mobileSheetMounted) {
-    setMobileSheetMounted(true);
-  }
-  // Widening mid-close unmounts the sheet before its close completes.
-  if (!isMobile && !openMobile && mobileSheetMounted) {
-    setMobileSheetMounted(false);
-  }
+  const setMobileSheetElement = (element: HTMLDivElement | null) => {
+    setMobileSheetMounted(element !== null);
+  };
 
   const state = resolveSidebarState({ isMobile, open, openMobile });
 
@@ -222,7 +211,7 @@ function SidebarProvider({
     open,
     openMobile,
     mobileSheetMounted,
-    setMobileSheetMounted,
+    setMobileSheetElement,
     setOpen: store.setOpen,
     setOpenMobile: store.setOpenMobile,
     state,
@@ -295,13 +284,7 @@ function Sidebar({
   resizable?: boolean | SidebarResizableOptions;
 }) {
   const t = useTranslation(sidebarUiMessages);
-  const { isMobile, state, openMobile, setOpenMobile, setMobileSheetMounted } = useSidebar();
-  // Not usePanelAnimationSettings: its navigation suppression would snap the sheet shut mid-exit when an item navigates.
-  const panelAnimationDurationMs = useClientSettings(
-    (settings) => settings.panelAnimationDurationMs,
-  );
-  const prefersReducedMotion = useMediaQuery("(prefers-reduced-motion: reduce)");
-  const panelAnimationsActive = panelAnimationDurationMs > 0 && !prefersReducedMotion;
+  const { isMobile, state, openMobile, setOpenMobile, setMobileSheetElement } = useSidebar();
   const offcanvasCollapsed = !isMobile && collapsible === "offcanvas" && state === "collapsed";
 
   const resolvedResizable = resolveSidebarResizable({ collapsible, isMobile, resizable });
@@ -327,17 +310,9 @@ function Sidebar({
   if (isMobile) {
     return (
       <SidebarInstanceContext value={instanceContextValue}>
-        <Sheet
-          onOpenChange={setOpenMobile}
-          onOpenChangeComplete={(open) => {
-            if (!open) setMobileSheetMounted(false);
-          }}
-          open={openMobile}
-        >
-          {/* Children stay mounted while closed so their window shortcuts, like thread jumps, keep working. */}
+        <Sheet onOpenChange={setOpenMobile} open={openMobile}>
           <SheetPopup
-            keepMounted
-            {...(panelAnimationsActive ? {} : { transitionDurationMs: 0 })}
+            ref={setMobileSheetElement}
             className={cn(
               "w-(--sidebar-width) max-w-none bg-sidebar surface-grain p-0 text-sidebar-foreground",
               className,
@@ -899,7 +874,6 @@ export {
   SidebarProvider,
   SidebarRail,
   SidebarTrigger,
-  useMobileSidebarSheetMounted,
   useSidebar,
   useSidebarVisibility,
 };

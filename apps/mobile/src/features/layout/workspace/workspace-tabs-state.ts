@@ -38,16 +38,9 @@ function emptyTab(): WorkspaceTabState {
   return { query: "", searchMode: "resting", scrollOffset: 0, searchEntryOffset: 0 };
 }
 
-/** The list a workspace page belongs to. */
-export function workspaceTabOf(routeName: string | undefined): WorkspaceTab {
-  return routeName === "PullRequest" ? "pullRequests" : "threads";
-}
-
-export function initialWorkspaceTabsState(
-  selectedTab: WorkspaceTab = "threads",
-): WorkspaceTabsState {
+export function initialWorkspaceTabsState(): WorkspaceTabsState {
   return {
-    selectedTab,
+    selectedTab: "threads",
     selectionRevision: 0,
     tabs: {
       threads: emptyTab(),

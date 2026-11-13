@@ -1,4 +1,3 @@
-import { resolveProviderProbeTimeoutMs } from "@t3tools/provider-core/server/snapshotProbe";
 import {
   ANTIGRAVITY_DEFAULT_MODEL,
   ProviderDriverKind,
@@ -41,7 +40,7 @@ import { antigravityThinkingConfig } from "./acp/AntigravityAcpSupport.ts";
 
 const EMPTY_MODEL_CAPABILITIES = createModelCapabilities({ optionDescriptors: [] });
 const MAX_WORKSPACE_SNAPSHOTS = 32;
-const HEALTH_CHECK_TIMEOUT_MS = 90_000;
+const HEALTH_CHECK_TIMEOUT = "90 seconds";
 const SIGN_IN_MESSAGE = "Sign in with Google to use Antigravity.";
 const AUTH_UNCHECKED_MESSAGE =
   "Antigravity is installed. Google account access is not checked yet.";
@@ -156,7 +155,6 @@ interface AntigravityProviderState {
 }
 
 interface AntigravityProviderOptions {
-  readonly environment?: NodeJS.ProcessEnv;
   readonly stampIdentity: (snapshot: ServerProviderDraft) => Effect.Effect<ServerProvider>;
   readonly probe: Effect.Effect<
     EffectAcpSchema.InitializeResponse,
@@ -273,12 +271,10 @@ export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(func
   const checkProvider = Effect.fn("checkAntigravityProvider")(function* () {
     if (!settings.enabled) return yield* getSnapshot;
     const before = yield* SubscriptionRef.get(metadata);
-    const timeoutMs = resolveProviderProbeTimeoutMs(
-      "antigravity",
-      HEALTH_CHECK_TIMEOUT_MS,
-      options.environment,
+    const result = yield* options.probe.pipe(
+      Effect.timeoutOption(HEALTH_CHECK_TIMEOUT),
+      Effect.result,
     );
-    const result = yield* options.probe.pipe(Effect.timeoutOption(timeoutMs), Effect.result);
     const initialized =
       Result.isSuccess(result) && Option.isSome(result.success) ? result.success.value : undefined;
     const version = initialized?.agentInfo?.version;
@@ -293,7 +289,7 @@ export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(func
             ? "Antigravity ACP runtime is not installed or its executable could not be found."
             : failure
               ? "Antigravity could not complete its local health check."
-              : `Antigravity did not respond to its local health check within ${timeoutMs / 1_000} seconds.`;
+              : `Antigravity did not respond to its local health check within ${HEALTH_CHECK_TIMEOUT}.`;
     const supportsTextGeneration =
       initialized !== undefined ? yield* options.supportsTextGeneration : false;
     const updatedAt = DateTime.formatIso(yield* DateTime.now);

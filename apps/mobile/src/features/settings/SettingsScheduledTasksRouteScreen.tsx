@@ -38,7 +38,6 @@ import {
   WEBHOOK_FILTER_OPS,
   type WebhookFilterDraft,
 } from "@t3tools/client-runtime/scheduled-task-webhook";
-import { scheduleTimeZoneLabel } from "@t3tools/client-runtime/scheduled-task-time-zone";
 import { useRef, useState, type ReactNode } from "react";
 import { useFocusEffect, useNavigation, usePreventRemove } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -61,7 +60,6 @@ import { webhookAddress } from "@t3tools/client-runtime/webhook-address";
 import { tryCopyTextWithHaptic } from "../../lib/copyTextWithHaptic";
 import { usePreparedConnection } from "../../state/session";
 import { buildModelOptions } from "../../lib/modelOptions";
-import { withImplicitFastModeSelection } from "../../lib/providerOptions";
 import { useProjects, useEnvironmentServerConfig } from "../../state/entities";
 import { useEnvironmentQuery } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
@@ -87,7 +85,9 @@ import { useScheduledTaskDestinationLabel, useScheduledTaskEditor } from "./sche
 import {
   discardScheduledTaskEditor,
   markScheduledTaskEditorSaved,
+  scheduledTaskEditorSessionAtom,
 } from "./scheduled-task-editor-state";
+import { appAtomRegistry } from "../../state/atom-registry";
 import {
   formatNextScheduledTaskRun,
   formatScheduledTaskInterval,
@@ -117,7 +117,7 @@ const THREAD_MODE_LABELS: Record<ScheduledTaskThreadMode, string> = {
   fresh_session: "One thread, fresh session",
 };
 
-function describeSchedule(task: ScheduledTask, timeZone?: string): string {
+function describeSchedule(task: ScheduledTask): string {
   if (task.schedule.type === "webhook") return "On webhook";
   if (task.schedule.type === "once") {
     const runAt = new Date(task.schedule.runAt);
@@ -125,8 +125,7 @@ function describeSchedule(task: ScheduledTask, timeZone?: string): string {
   }
   if (task.schedule.type === "interval") return formatScheduledTaskInterval(task.schedule.everyMs);
   const days = task.schedule.weekdays?.length ? repeatLabel(task.schedule.weekdays) : "Every day";
-  const zone = scheduleTimeZoneLabel(timeZone, task.nextRunAt);
-  return `${days} at ${formatTime(task.schedule.timeOfDay)}${zone === undefined ? "" : ` ${zone}`}`;
+  return `${days} at ${formatTime(task.schedule.timeOfDay)}`;
 }
 
 function formatTime(value: string): string {
@@ -517,6 +516,8 @@ function SettingsScheduledTaskEditorScreen({ title }: { readonly title: string }
   const voiceInput = useVoiceInputController({
     ownerKey,
     label: editor?.draft.title.trim() || title,
+    subscribeToDraftChanges: (onChange) =>
+      appAtomRegistry.subscribe(scheduledTaskEditorSessionAtom, onChange),
     selection,
     readDraftMessage: () => {
       const current = readEditor();
@@ -683,7 +684,6 @@ function TaskForm({
     draft.task !== null &&
     tasks.data !== null &&
     !tasks.data.tasks.some((task) => task.id === draft.task?.id);
-  const runAtZone = scheduleTimeZoneLabel(tasks.data?.timeZone);
   const environmentUnavailable = !availableTargets.some(
     (target) => target.environmentId === environmentId,
   );
@@ -767,7 +767,7 @@ function TaskForm({
       title: draft.title.trim(),
       prompt: draft.prompt.trim(),
       projectId: draft.projectId,
-      modelSelection: withImplicitFastModeSelection(draft.modelSelection, config?.providers ?? []),
+      modelSelection: draft.modelSelection,
       schedule,
       enabled: draft.enabled,
       threadId: draft.threadId,
@@ -1058,9 +1058,7 @@ function TaskForm({
             <>
               <Pressable
                 accessibilityRole="button"
-                accessibilityLabel={`Time, ${formatTime(draft.schedule.timeOfDay)}${
-                  runAtZone ? ` ${runAtZone}` : ""
-                }`}
+                accessibilityLabel={`Time, ${formatTime(draft.schedule.timeOfDay)}`}
                 onPress={() => setTimePickerOpen((open) => !open)}
                 className="min-h-14 flex-row items-center gap-3 border-t border-border-subtle px-4 py-3 active:opacity-70"
               >
@@ -1072,7 +1070,6 @@ function TaskForm({
                   className="min-w-0 flex-1 text-right text-foreground-muted"
                 >
                   {formatTime(draft.schedule.timeOfDay)}
-                  {runAtZone ? ` ${runAtZone}` : ""}
                 </Text>
                 <SymbolView
                   name="chevron.right"
@@ -1498,7 +1495,7 @@ function EnvironmentTasks({
                 {task.title}
               </Text>
               <Text className="text-sm text-foreground-muted" numberOfLines={2}>
-                {describeSchedule(task, tasks.data?.timeZone)}
+                {describeSchedule(task)}
                 {!task.enabled
                   ? " · Paused"
                   : task.nextRunAt

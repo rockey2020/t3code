@@ -78,7 +78,7 @@ const writeFirefoxCookieDatabase = Effect.fnUntraced(function* (
 });
 
 const run = <A, E>(effect: Effect.Effect<A, E, FileSystem.FileSystem | Path.Path | Scope.Scope>) =>
-  effect.pipe(Effect.provide(NodeServices.layer));
+  effect.pipe(Effect.provide(NodeServices.layer), Effect.scoped);
 
 describe("readFirefoxCookies", () => {
   it.effect("converts millisecond expiries from schema 16 and newer", () =>

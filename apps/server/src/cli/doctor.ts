@@ -1,15 +1,11 @@
 import { DATABASE_COMPACTION_RECOMMENDED_BYTES } from "@t3tools/contracts";
-import * as Clock from "effect/Clock";
 import * as Console from "effect/Console";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as Option from "effect/Option";
 import { Command, Flag, GlobalFlag, Prompt } from "effect/cli";
 
 import * as BootService from "../cloud/bootService.ts";
 import * as DatabaseMaintenance from "../persistence/DatabaseMaintenance.ts";
-import * as ServerOwnership from "../serverOwnership.ts";
-import { isProcessAlive, readPersistedServerRuntimeState } from "../serverRuntimeState.ts";
 import { projectLocationFlags, resolveCliAuthConfig } from "./config.ts";
 import * as CliService from "./service.ts";
 
@@ -20,49 +16,10 @@ const formatBytes = (bytes: number) =>
       ? `${(bytes / 1024 ** 2).toFixed(1)} MiB`
       : `${Math.ceil(bytes / 1024)} KiB`;
 
-const formatElapsed = (nanos: bigint) => {
-  const seconds = Number(nanos / 1_000_000_000n);
-  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
-};
-
-const COMPACT_STEP_LABELS: Record<DatabaseMaintenance.DatabaseCompactStep, string> = {
-  "prune-events": "Removing superseded events",
-  vacuum: "Rewriting the database file",
-  "rebuild-search": "Rebuilding the search index",
-  checkpoint: "Flushing the write-ahead log",
-};
-
-// Holding the server lock refuses a server launched mid-repair, such as one started over SSH.
-// Lock only: acquireServerOwnership would also refuse the older service doctor just stopped.
-const lockServerHome = Effect.fn("runDoctor.lockServerHome")(function* (paths: {
-  readonly dbPath: string;
-  readonly serverRuntimeStatePath: string;
-}) {
-  yield* ServerOwnership.holdServerOwnershipLock(paths.serverRuntimeStatePath).pipe(
-    Effect.catchTags({
-      ServerAlreadyRunningError: Effect.fn("runDoctor.nameServerHolder")(function* (cause) {
-        const owner = yield* readPersistedServerRuntimeState(paths.serverRuntimeStatePath).pipe(
-          Effect.map(Option.filter((state) => isProcessAlive(state.pid))),
-          Effect.orElseSucceed(() => Option.none()),
-        );
-        return yield* new DatabaseMaintenance.DatabaseInUseError({
-          path: paths.dbPath,
-          cause,
-          ...(Option.isSome(owner) && {
-            pid: owner.value.pid,
-            serviceManaged: owner.value.serviceManaged === true,
-          }),
-        });
-      }),
-    }),
-  );
-});
-
 export const runDoctor = Effect.fn("runDoctor")(function* (
-  paths: { readonly dbPath: string; readonly serverRuntimeStatePath: string },
+  databasePath: string,
   options: { readonly fix: boolean; readonly dryRun: boolean; readonly interactive?: boolean },
 ) {
-  const databasePath = paths.dbPath;
   const maintenance = yield* DatabaseMaintenance.DatabaseMaintenance;
   const status = yield* maintenance.inspect(databasePath);
   yield* Console.log(
@@ -84,7 +41,7 @@ export const runDoctor = Effect.fn("runDoctor")(function* (
               status.incrementalVacuumEnabled
                 ? "Returns unused space to disk."
                 : "Returns unused space to disk and turns on automatic shrinking."
-            }\n  Rewrites the whole ${formatBytes(status.databaseBytes)} database, which can take more than an hour on a large database or slow disk.\n  Pauses the background service, if installed, while it runs and may need temporary disk space.`,
+            }\n  Pauses the background service, if installed, while it runs and may need temporary disk space.`,
             recommended:
               !status.incrementalVacuumEnabled ||
               status.reclaimableBytes >= DATABASE_COMPACTION_RECOMMENDED_BYTES,
@@ -143,29 +100,18 @@ export const runDoctor = Effect.fn("runDoctor")(function* (
   }
   if (selected.includes("database")) {
     const service = yield* BootService.BootService;
-    yield* Console.log("\nReclaiming database space. Each step is shown as it starts.");
-    const startedAt = yield* Clock.monotonicTimeNanos;
-    const reportStep = (step: DatabaseMaintenance.DatabaseCompactStep) =>
-      Clock.monotonicTimeNanos.pipe(
-        Effect.flatMap((now) =>
-          Console.log(`  [${formatElapsed(now - startedAt)}] ${COMPACT_STEP_LABELS[step]}`),
-        ),
-      );
+    yield* Console.log("\nReclaiming database space. This can take several minutes...");
     // Report the repair before restarting, which can fail independently.
     yield* service.withStopped(
-      lockServerHome(paths).pipe(
-        Effect.andThen(maintenance.compact(databasePath, reportStep)),
-        Effect.tap((result) =>
-          Clock.monotonicTimeNanos.pipe(
-            Effect.flatMap((now) =>
-              Console.log(
-                `Done in ${formatElapsed(now - startedAt)}: ${formatBytes(result.beforeBytes)} -> ${formatBytes(result.afterBytes)}, ${result.deletedEventCount} superseded events removed.`,
-              ),
+      maintenance
+        .compact(databasePath)
+        .pipe(
+          Effect.tap((result) =>
+            Console.log(
+              `Done: ${formatBytes(result.beforeBytes)} -> ${formatBytes(result.afterBytes)}, ${result.deletedEventCount} superseded events removed.`,
             ),
           ),
         ),
-        Effect.scoped,
-      ),
     );
   }
   if (selected.includes("legacy")) {
@@ -193,7 +139,7 @@ export const doctorCommand = Command.make("doctor", {
     Effect.gen(function* () {
       const logLevel = yield* GlobalFlag.LogLevel;
       const config = yield* resolveCliAuthConfig(flags, logLevel);
-      yield* runDoctor(config, { fix: flags.fix, dryRun: flags.dryRun }).pipe(
+      yield* runDoctor(config.dbPath, { fix: flags.fix, dryRun: flags.dryRun }).pipe(
         Effect.provide(Layer.merge(DatabaseMaintenance.layer, CliService.layer(config))),
       );
     }),

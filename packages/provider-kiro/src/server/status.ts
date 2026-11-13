@@ -1,4 +1,3 @@
-import { resolveProviderProbeTimeoutMs } from "@t3tools/provider-core/server/snapshotProbe";
 import {
   type ModelCapabilities,
   ProviderDriverKind,
@@ -90,7 +89,7 @@ const snapshot = (
     enabled: settings.enabled,
     checkedAt,
     models: kiroModels(settings, listed, agents),
-    // `/compact` runs `_kiro/session/compact`; see kiroCompactSession.
+    // `/compact` runs `_kiro/session/compact`; see compactKiroSession.
     slashCommands: [COMPACT_SLASH_COMMAND],
     probe,
   });
@@ -377,9 +376,7 @@ export const checkKiroProviderStatus = Effect.fn("checkKiroProviderStatus")(func
 
   const probeEnvironment = providerProbeEnvironment(environment);
   const versionResult = yield* runKiroCli(settings, ["--version"], probeEnvironment).pipe(
-    Effect.timeoutOption(
-      resolveProviderProbeTimeoutMs("kiro", VERSION_PROBE_TIMEOUT_MS, environment),
-    ),
+    Effect.timeoutOption(VERSION_PROBE_TIMEOUT_MS),
     Effect.result,
   );
   if (Result.isFailure(versionResult) || Option.isNone(versionResult.success)) {
@@ -410,10 +407,7 @@ export const checkKiroProviderStatus = Effect.fn("checkKiroProviderStatus")(func
     settings,
     ["whoami", "--format", "json"],
     probeEnvironment,
-  ).pipe(
-    Effect.timeoutOption(resolveProviderProbeTimeoutMs("kiro", AUTH_PROBE_TIMEOUT_MS, environment)),
-    Effect.result,
-  );
+  ).pipe(Effect.timeoutOption(AUTH_PROBE_TIMEOUT_MS), Effect.result);
   const auth = kiroAuthFromWhoami(
     Result.isSuccess(whoamiResult) ? Option.getOrUndefined(whoamiResult.success) : undefined,
     environment,
@@ -439,16 +433,12 @@ export const checkKiroProviderStatus = Effect.fn("checkKiroProviderStatus")(func
               ["chat", "--list-models", "--format", "json"],
               probeEnvironment,
             ).pipe(
-              Effect.timeoutOption(
-                resolveProviderProbeTimeoutMs("kiro", AUTH_PROBE_TIMEOUT_MS, environment),
-              ),
+              Effect.timeoutOption(AUTH_PROBE_TIMEOUT_MS),
               Effect.map((output) => kiroModelsFromList(Option.getOrUndefined(output))),
               Effect.orElseSucceed(() => undefined),
             ),
             probeKiroAgents(settings, probeEnvironment).pipe(
-              Effect.timeoutOption(
-                resolveProviderProbeTimeoutMs("kiro", AUTH_PROBE_TIMEOUT_MS, environment),
-              ),
+              Effect.timeoutOption(AUTH_PROBE_TIMEOUT_MS),
               Effect.map(Option.getOrUndefined),
               Effect.orElseSucceed(() => undefined),
             ),

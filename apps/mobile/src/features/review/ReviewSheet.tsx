@@ -2,30 +2,33 @@ import { settlePromise, squashAtomCommandFailure } from "@t3tools/client-runtime
 import { AsyncResult } from "effect/reactivity";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { formatDiffCount } from "@t3tools/client-runtime/diff-count";
-import { LegendList } from "@legendapp/list/react-native";
 import { useNavigation, type StaticScreenProps } from "@react-navigation/native";
+import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
 import { AppBar } from "../../components/ui/AppBar";
 import type { AppBarMenuItem } from "../../components/ui/AppBar.types";
 import type { ReviewSectionItem } from "./reviewModel";
 import { useReviewHeaderPresentation } from "./useReviewHeaderPresentation";
 import { type Ref, type ReactElement, useImperativeHandle, useRef, useState } from "react";
-import { Pressable, ScrollView, type NativeSyntheticEvent, StyleSheet, View } from "react-native";
-import { RefreshControl } from "../../components/ui/RefreshControl";
+import {
+  FlatList,
+  Platform,
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  type NativeSyntheticEvent,
+  StyleSheet,
+  View,
+} from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useReduceMotionEnabled } from "../../lib/appState";
-import { useContentTopInset, useSheetContentBottomInset } from "../../components/ui/useBarInset";
+import { useNativeColumnLayoutMetrics } from "../../native/native-layout-metrics";
+import { useContentTopInset } from "../../components/ui/useBarInset";
 import { NativeScrollView } from "../../native/NativeScrollViewMarker";
 
 import { AppText as Text } from "../../components/ui/AppText";
 import { SymbolView } from "../../components/ui/AppSymbol";
-import {
-  ContentBand,
-  ContentStatus,
-  contentStatusContainerStyle,
-} from "../../components/ui/ContentBand";
-import { PaneListItem } from "../../components/ui/PaneListItem";
 import { ScreenContent } from "../../components/ui/ScreenContent";
-import { SheetPane } from "../../components/ui/SheetPane";
+import { cn } from "../../lib/cn";
 import { environmentCatalog } from "../../connection/catalog";
 import { useEnvironmentPresentation } from "../../state/presentation";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -146,10 +149,15 @@ const SHOWCASE_ENABLED = process.env.EXPO_PUBLIC_SHOWCASE === "1";
 
 const ReviewNotice = function ReviewNotice(props: { readonly notice: string }) {
   return (
-    <ContentBand tone="warning">
+    <View
+      className={cn(
+        "bg-warning px-4 py-3",
+        Platform.OS === "android" ? "m-2 rounded-[20px]" : "border-b border-warning-border",
+      )}
+    >
       <Text className="text-xs font-t3-bold uppercase text-warning-foreground">Partial diff</Text>
       <Text className="text-xs leading-normal text-warning-foreground">{props.notice}</Text>
-    </ContentBand>
+    </View>
   );
 };
 
@@ -234,7 +242,21 @@ const ReviewFileNavigatorRow = function ReviewFileNavigatorRow(props: {
   };
 
   return (
-    <PaneListItem selected={selected} onPress={handlePress}>
+    <Pressable
+      accessibilityRole="button"
+      accessibilityState={{ selected }}
+      className={
+        Platform.OS === "android"
+          ? cn(
+              "mt-1 min-h-12 justify-center rounded-[20px] px-3 py-2 active:bg-subtle",
+              selected && "bg-subtle-strong",
+            )
+          : selected
+            ? "mt-1 min-h-12 justify-center rounded-xl bg-subtle-strong px-3 py-2"
+            : "mt-1 min-h-12 justify-center rounded-xl px-3 py-2 active:bg-subtle"
+      }
+      onPress={handlePress}
+    >
       <Text
         className={
           selected
@@ -253,7 +275,7 @@ const ReviewFileNavigatorRow = function ReviewFileNavigatorRow(props: {
           -{formatDiffCount(file.deletions)}
         </Text>
       </View>
-    </PaneListItem>
+    </Pressable>
   );
 };
 
@@ -312,27 +334,24 @@ function ReviewFileNavigator({ files, sectionId, onSelectFile, ref }: ReviewFile
   );
 
   return (
-    <SheetPane>
+    <View className="flex-1 ios:bg-sheet android:bg-header">
       <AppBar
         title="Changed files"
         subtitle={`${files.length} ${files.length === 1 ? "file" : "files"}`}
         hideBottomBorder
       />
       <ScreenContent insetHorizontal>
-        <LegendList
+        <FlatList
           renderScrollComponent={NativeScrollView}
           data={files}
-          // Rows keep their callback until extraData changes; it reads collapsed files.
-          extraData={[selectedFileId, handleSelectFile]}
+          extraData={selectedFileId}
           keyExtractor={(file) => file.id}
-          estimatedItemSize={64}
-          recycleItems
           contentInsetAdjustmentBehavior="automatic"
           contentContainerStyle={{ paddingHorizontal: 8, paddingVertical: 8 }}
           renderItem={renderFile}
         />
       </ScreenContent>
-    </SheetPane>
+    </View>
   );
 }
 
@@ -356,8 +375,11 @@ export function ReviewSheet(props: ReviewSheetProps) {
   const { draftMessage, draftContext } = useThreadDraftForThread({ environmentId, threadId });
   const reviewCache = useReviewCacheForThread({ environmentId, threadId });
   const { selectedThreadCwd } = useSelectedThreadWorktree();
+  const columnMetrics = useNativeColumnLayoutMetrics();
+  const safeArea = columnMetrics?.safeArea ?? insets;
   const topContentInset = useContentTopInset();
-  const bottomContentInset = useSheetContentBottomInset();
+  const bottomContentInset =
+    Platform.OS === "ios" ? safeArea.bottom + 8 : Math.max(insets.bottom, 18) + 18;
 
   const {
     error,
@@ -552,10 +574,16 @@ export function ReviewSheet(props: ReviewSheetProps) {
 
     if (error) {
       children.push(
-        <ContentBand key="review-error">
+        <View
+          key="review-error"
+          className={cn(
+            "bg-card px-4 py-3",
+            Platform.OS === "android" ? "m-2 rounded-[20px]" : "border-b border-border",
+          )}
+        >
           <Text className="text-sm font-t3-bold text-foreground">Review unavailable</Text>
           <Text className="text-xs leading-normal text-foreground-muted">{error}</Text>
-        </ContentBand>,
+        </View>,
       );
     }
 
@@ -605,7 +633,7 @@ export function ReviewSheet(props: ReviewSheetProps) {
       />
 
       <ScreenContent>
-        <View className="flex-1 bg-sheet">
+        <View className="flex-1 bg-sheet android:bg-sheet-solid">
           {showConnectionNotice ? (
             <View className="flex-1" style={{ paddingTop: topContentInset }}>
               <EnvironmentConnectionNotice
@@ -673,8 +701,8 @@ export function ReviewSheet(props: ReviewSheetProps) {
             <ScrollView
               key={fallbackScrollViewKey}
               contentContainerStyle={
-                parsedDiff.kind === "empty" || !selectedSection
-                  ? contentStatusContainerStyle
+                Platform.OS === "android" && (parsedDiff.kind === "empty" || !selectedSection)
+                  ? { flexGrow: 1, justifyContent: "center" }
                   : undefined
               }
               contentInsetAdjustmentBehavior="never"
@@ -695,20 +723,59 @@ export function ReviewSheet(props: ReviewSheetProps) {
               {listHeader}
               {!selectedSection ? (
                 error ? null : (
-                  <ContentStatus
-                    title="No review diffs"
-                    detail="This thread has no ready turn diffs and the worktree diff is empty."
-                  />
+                  <View
+                    className={
+                      Platform.OS === "android"
+                        ? "items-center px-6 py-5"
+                        : "border-b border-border bg-card px-4 py-5"
+                    }
+                  >
+                    <Text className="text-sm font-t3-bold text-foreground">No review diffs</Text>
+                    <Text
+                      className={cn(
+                        "text-xs leading-normal text-foreground-muted",
+                        Platform.OS === "android" && "mt-2 text-center",
+                      )}
+                    >
+                      This thread has no ready turn diffs and the worktree diff is empty.
+                    </Text>
+                  </View>
                 )
               ) : selectedSection.isLoading && selectedSection.diff === null ? (
-                <ContentStatus loading detail="Loading diff…" />
+                <View
+                  className={cn(
+                    "items-center gap-3 px-4 py-6",
+                    Platform.OS !== "android" && "border-b border-border bg-card",
+                  )}
+                >
+                  <AppActivityIndicator size="small" />
+                  <Text className="text-xs text-foreground-muted">Loading diff…</Text>
+                </View>
               ) : parsedDiff.kind === "empty" ? (
-                <ContentStatus
-                  title="No changes"
-                  detail={selectedSection.subtitle ?? "This diff is empty."}
-                />
+                <View
+                  className={
+                    Platform.OS === "android"
+                      ? "items-center px-6 py-5"
+                      : "border-b border-border bg-card px-4 py-5"
+                  }
+                >
+                  <Text className="text-sm font-t3-bold text-foreground">No changes</Text>
+                  <Text
+                    className={cn(
+                      "text-xs leading-normal text-foreground-muted",
+                      Platform.OS === "android" && "mt-2 text-center",
+                    )}
+                  >
+                    {selectedSection.subtitle ?? "This diff is empty."}
+                  </Text>
+                </View>
               ) : parsedDiff.kind === "raw" ? (
-                <ContentBand spacing="roomy">
+                <View
+                  className={cn(
+                    "gap-3 bg-card px-4 py-4",
+                    Platform.OS === "android" ? "m-2 rounded-[20px]" : "border-b border-border",
+                  )}
+                >
                   <Text className="text-xs leading-normal text-foreground-muted">
                     {parsedDiff.reason}
                   </Text>
@@ -717,9 +784,14 @@ export function ReviewSheet(props: ReviewSheetProps) {
                       {parsedDiff.text}
                     </Text>
                   </ScrollView>
-                </ContentBand>
+                </View>
               ) : parsedDiff.kind === "files" ? (
-                <ContentBand spacing="roomy">
+                <View
+                  className={cn(
+                    "gap-3 bg-card px-4 py-4",
+                    Platform.OS === "android" ? "m-2 rounded-[20px]" : "border-b border-border",
+                  )}
+                >
                   <Text className="text-xs leading-normal text-foreground-muted">
                     Native diff view unavailable. Showing the raw patch.
                   </Text>
@@ -728,7 +800,7 @@ export function ReviewSheet(props: ReviewSheetProps) {
                       {selectedSection?.diff ?? ""}
                     </Text>
                   </ScrollView>
-                </ContentBand>
+                </View>
               ) : null}
             </ScrollView>
           )}

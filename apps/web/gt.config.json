@@ -1,9 +1,0 @@
-{
-  "defaultLocale": "en",
-  "locales": ["de", "es", "fr", "ja", "ko", "pt-BR", "ru", "zh"],
-  "files": {
-    "gt": {
-      "output": "src/i18n/translations/[locale].json"
-    }
-  }
-}

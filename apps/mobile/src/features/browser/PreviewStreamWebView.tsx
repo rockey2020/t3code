@@ -405,7 +405,7 @@ function PreviewStreamDocumentView({
                 onPictureInPicture?.(message, message.detail);
                 return;
               case "status":
-                if (message.status !== "connecting") clearBootstrapTimer();
+                clearBootstrapTimer();
                 if (message.status === "error") {
                   fail(message.detail ?? "Browser stream failed.");
                   return;

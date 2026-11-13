@@ -11,21 +11,12 @@ import {
   focusPanelTerminalAfterClose,
   focusTerminal,
   focusTerminalOnNavigation,
+  focusTerminalOnThreadEnter,
   registerTerminalFocusTarget,
-  restoreFocusOnThreadEnter,
 } from "./terminalFocus";
 
 const threadRef = (threadId: string) =>
   scopeThreadRef(EnvironmentId.make("env"), ThreadId.make(threadId));
-
-// Node has no DOM; entry only listens on the root's document for focus changes.
-const enterThread = (ref: ReturnType<typeof threadRef>) =>
-  restoreFocusOnThreadEnter(ref, {
-    root: {
-      ownerDocument: Object.assign(new EventTarget(), { activeElement: null }),
-    } as unknown as HTMLElement,
-    focusComposer: () => {},
-  });
 
 describe("focusTerminal", () => {
   it("focuses a mounted target right away", () => {
@@ -182,7 +173,7 @@ describe("focusTerminal", () => {
     const focus = vi.fn(() => true);
     const unregister = registerTerminalFocusTarget({ threadRef: ref, terminalId: "a", focus });
 
-    const leave = enterThread(ref);
+    const leave = focusTerminalOnThreadEnter(ref);
 
     expect(focus).toHaveBeenCalledTimes(1);
     leave();
@@ -208,7 +199,7 @@ describe("focusTerminal", () => {
       terminalId: "panel",
       focus: panel,
     });
-    const leave = enterThread(ref);
+    const leave = focusTerminalOnThreadEnter(ref);
 
     expect(drawer).not.toHaveBeenCalled();
     expect(panel).toHaveBeenCalledTimes(1);
@@ -227,12 +218,12 @@ describe("focusTerminal", () => {
       focus: drawer,
     });
 
-    const leaveFirst = enterThread(ref);
+    const leaveFirst = focusTerminalOnThreadEnter(ref);
     focusTerminal(ref, "drawer");
     focusTerminalOnNavigation(ref, "drawer");
     leaveFirst();
     drawer.mockClear();
-    const leaveSecond = enterThread(ref);
+    const leaveSecond = focusTerminalOnThreadEnter(ref);
 
     expect(drawer).toHaveBeenCalledTimes(1);
     leaveSecond();
@@ -243,7 +234,7 @@ describe("focusTerminal", () => {
     const ref = threadRef("revisited");
     useTerminalUiStateStore.getState().ensureTerminal(ref, "drawer", { open: true, active: true });
     focusTerminalOnNavigation(ref, "panel");
-    enterThread(threadRef("elsewhere"))();
+    focusTerminalOnThreadEnter(threadRef("elsewhere"))();
 
     const drawer = vi.fn(() => true);
     const unregisterDrawer = registerTerminalFocusTarget({
@@ -251,7 +242,7 @@ describe("focusTerminal", () => {
       terminalId: "drawer",
       focus: drawer,
     });
-    const leave = enterThread(ref);
+    const leave = focusTerminalOnThreadEnter(ref);
 
     expect(drawer).toHaveBeenCalledTimes(1);
     leave();

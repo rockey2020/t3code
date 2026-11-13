@@ -473,21 +473,13 @@ export const make = Effect.fn("SshDeviceHost.make")(function* (
     return next;
   });
 
-  const closeConnection = Effect.suspend(() => {
-    const failedScope = connectionScope;
-    connectionScope = null;
-    ready = null;
-    return failedScope ? Scope.close(failedScope, Exit.void) : Effect.void;
-  });
-
   const connect = Effect.fn("SshDeviceHost.connect")(function* () {
     for (let attempt = 0; ; attempt++) {
-      const result = yield* connectOnce().pipe(
-        Effect.onInterrupt(() => closeConnection),
-        Effect.result,
-      );
+      const result = yield* connectOnce().pipe(Effect.result);
       if (result._tag === "Success") return result.success;
-      yield* closeConnection;
+      const failedScope = connectionScope;
+      connectionScope = null;
+      if (failedScope) yield* Scope.close(failedScope, Exit.void);
       // SSH binds after the reservation is released, so a competing bind needs fresh ports.
       if (
         attempt >= 2 ||

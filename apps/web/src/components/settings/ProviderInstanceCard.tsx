@@ -72,7 +72,6 @@ import { SettingResetButton, SettingsRow, SettingsSection } from "./settingsLayo
 import { AcpSessionManagementSection } from "./AcpSessionManagementSection";
 import { FoldedSettingsSection } from "./FoldedSettingsSection";
 import { readCodexSetupMode } from "./CodexSetupSection.logic";
-import { getProviderRestartNotice } from "../ProviderUpdateLaunchNotification.logic";
 import {
   getProviderVersionAdvisoryPresentation,
   PROVIDER_STATUS_STYLES,
@@ -288,7 +287,6 @@ function ProviderEnvironmentFieldRow(props: {
   readonly onRemove: (field: ProviderEnvironmentField) => void;
   readonly managedReason?: string | undefined;
   readonly secretSources: ReadonlyArray<SecretSource>;
-  readonly environmentId?: EnvironmentId | undefined;
 }) {
   const t = useTranslation(settingsProvidersMessages);
   const locale = useLocale();
@@ -326,7 +324,6 @@ function ProviderEnvironmentFieldRow(props: {
               spellCheck={false}
               aria-label={tl(props.field.label)}
               sources={props.secretSources}
-              environmentId={props.environmentId}
               onSecretChange={(secret) => props.onSecretChange(props.field, secret)}
             />
           )}
@@ -353,7 +350,6 @@ export function ProviderEnvironmentSection(props: {
   /** Variables an administrator's policy pins: listed by name, never editable or removable. */
   readonly managed?: { readonly names: ReadonlySet<string>; readonly reason: string } | undefined;
   readonly secretSources?: ReadonlyArray<SecretSource>;
-  readonly environmentId?: EnvironmentId | undefined;
 }) {
   const t = useTranslation(settingsProvidersMessages);
   const locale = useLocale();
@@ -562,7 +558,6 @@ export function ProviderEnvironmentSection(props: {
                     spellCheck={false}
                     aria-label={t("Environment variable value {index}", { index: index + 1 })}
                     sources={props.secretSources ?? []}
-                    environmentId={props.environmentId}
                     onSecretChange={(secret) => setVariableSecret(variable.id, secret)}
                   >
                     {(parts) => layout(parts.source, parts.value)}
@@ -792,8 +787,6 @@ export function ProviderInstanceCard({
     !isUpdating && (updateState?.status === "failed" || updateState?.status === "unchanged")
       ? updateState.message
       : null;
-  const restartNotice =
-    enabled && !isUpdating && liveProvider ? getProviderRestartNotice(liveProvider) : null;
   const hasCompatibilityWarning =
     compatibility !== undefined &&
     compatibility.status !== "supported" &&
@@ -1124,13 +1117,13 @@ export function ProviderInstanceCard({
       <div
         data-slot="settings-row"
         className={cn(
-          "group relative flex min-h-18 items-center gap-3 px-3 py-3 transition-colors sm:px-4",
+          "group flex min-h-18 items-center gap-3 px-3 py-3 transition-colors sm:px-4",
           selected ? "bg-foreground/[0.06]" : "hover:bg-muted/25",
         )}
       >
         <div
           className={cn(
-            "pointer-events-none flex min-w-0 flex-1 items-start gap-3 rounded-md text-left transition-opacity",
+            "pointer-events-none relative flex min-w-0 flex-1 items-start gap-3 rounded-md text-left transition-opacity",
             !enabled && !selected && "opacity-60 group-hover:opacity-100",
           )}
         >
@@ -1175,7 +1168,7 @@ export function ProviderInstanceCard({
             </span>
           </span>
         </div>
-        <span className="pointer-events-none relative flex h-5 shrink-0 items-center gap-1 *:pointer-events-auto">
+        <span className="flex h-5 shrink-0 items-center gap-1">
           {projectOverride?.value !== undefined ? (
             <span className="flex items-center">
               <ProjectOverrideInheritance
@@ -1249,11 +1242,6 @@ export function ProviderInstanceCard({
           {editorStatusNode}
         </div>
       </ProviderStatusDiagnostic>
-      {restartNotice ? (
-        <p aria-live="polite" className="text-xs leading-snug [overflow-wrap:anywhere]">
-          {restartNotice}
-        </p>
-      ) : null}
       {urlAuthAction && onAcceptUrlAuth ? (
         <div className="grid max-w-xl gap-1.5 pt-1 text-xs">
           <p>{tl(urlAuthAction.message)}</p>
@@ -1375,7 +1363,6 @@ export function ProviderInstanceCard({
                       : undefined
                   }
                   secretSources={secretSources}
-                  environmentId={environmentId}
                 />
               ))}
             </div>
@@ -1423,7 +1410,6 @@ export function ProviderInstanceCard({
             environment={genericEnvironment}
             onChange={updateGenericEnvironment}
             secretSources={secretSources}
-            environmentId={environmentId}
             managed={
               instanceLocks && {
                 names: instanceLocks.environmentNames,

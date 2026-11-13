@@ -53,14 +53,9 @@ function parseAgent(entry: unknown): OrchestrationV2WorkflowAgent | null {
   const label = text(field(entry, "label"));
   if (index === undefined || label === undefined) return null;
   const reportedState = text(field(entry, "state")) ?? "";
-  const startedAt = timestamp(field(entry, "startedAt"));
-  // Claude marks members `start` when scheduled; they only run once a concurrency slot sets startedAt.
-  const state =
-    reportedState === "start" && startedAt === undefined
-      ? "queued"
-      : Object.hasOwn(AGENT_STATES, reportedState)
-        ? (AGENT_STATES[reportedState] ?? "running")
-        : "running";
+  const state = Object.hasOwn(AGENT_STATES, reportedState)
+    ? (AGENT_STATES[reportedState] ?? "running")
+    : "running";
   return {
     index,
     label,
@@ -74,7 +69,7 @@ function parseAgent(entry: unknown): OrchestrationV2WorkflowAgent | null {
     ...optional("toolCalls", count(field(entry, "toolCalls"))),
     ...optional("durationMs", count(field(entry, "durationMs"))),
     ...optional("queuedAt", timestamp(field(entry, "queuedAt"))),
-    ...optional("startedAt", startedAt),
+    ...optional("startedAt", timestamp(field(entry, "startedAt"))),
     // Execution duration excludes startup waits; terminal progress carries the end instant.
     ...optional(
       "completedAt",

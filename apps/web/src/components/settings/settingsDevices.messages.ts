@@ -1,14 +1,6 @@
 import { translate, type Locale } from "../../i18n/locale";
 
 export const settingsDevicesMessages = {
-  "Could not reach the server": "无法连接服务器",
-  "You cannot check secrets on this environment": "你无权检查此环境中的凭据",
-  "Check that the secret resolves": "检查凭据能否读取",
-  "Checking the secret": "正在检查凭据",
-  "Secret resolved": "凭据读取成功",
-  "{label} failed: {detail}": "{label}失败：{detail}",
-  "{label} resolved": "{label}读取成功",
-  "Check {label}": "检查{label}",
   "Stored secret, enter a new value to replace": "已保存凭据，输入新值可替换",
   "Not set": "未设置",
   Value: "值",

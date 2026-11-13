@@ -260,9 +260,7 @@ export const make = (dependencies: Dependencies) => {
       input: PullRequestSetFilesViewedInput,
     ): Effect.fn.Return<void, PullRequestError> {
       const viewer = yield* requiredViewerOf(project, "setFilesViewed");
-      const cleared = input.files
-        .filter((file) => file.viewed && file.revision === undefined)
-        .map((file) => file.path);
+      const cleared = input.files.filter((file) => file.viewed).map((file) => file.path);
       const revisions =
         cleared.length === 0
           ? null
@@ -278,10 +276,10 @@ export const make = (dependencies: Dependencies) => {
       yield* filesViewedStore
         .set({
           ...filesViewedScope(project, input.number, viewer),
-          // Shown revisions win over the head; missing paths have null baselines; empty means deleted.
+          // Missing paths have null baselines; empty revision means confirmed deletion.
           files: input.files.map((file) => ({
             path: file.path,
-            revision: file.revision ?? revisions?.get(file.path) ?? null,
+            revision: revisions?.get(file.path) ?? null,
             viewed: file.viewed,
           })),
           viewedAt,

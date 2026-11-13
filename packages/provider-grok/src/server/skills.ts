@@ -1,4 +1,3 @@
-import { resolveProviderProbeTimeoutMs } from "@t3tools/provider-core/server/snapshotProbe";
 // The CLI catalog honors ignored/disabled skills and nested plugin skills that flat scans miss.
 import type { ServerProviderSkill } from "@t3tools/contracts";
 import type { GrokSettings } from "../settings.ts";
@@ -113,9 +112,7 @@ export const discoverGrokSkills = Effect.fn("discoverGrokSkills")(function* (
           cause,
         }),
     ),
-    Effect.timeoutOption(
-      resolveProviderProbeTimeoutMs("grok", GROK_SKILLS_PROBE_TIMEOUT_MS, environment),
-    ),
+    Effect.timeoutOption(GROK_SKILLS_PROBE_TIMEOUT_MS),
   );
 
   if (Option.isNone(inspectResult)) {

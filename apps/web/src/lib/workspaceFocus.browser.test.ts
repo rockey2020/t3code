@@ -33,15 +33,6 @@ function setup() {
   };
 }
 
-/** Mirrors MessagesTimeline's scroller, which takes focus so the keyboard scrolls it. */
-function conversationScroller(height: number) {
-  const timeline = document.createElement("div");
-  timeline.style.cssText = `height: ${height}px; overflow-y: auto`;
-  timeline.tabIndex = -1;
-  timeline.dataset.workspaceFocusDefault = "";
-  return timeline;
-}
-
 describe("workspace area focus", () => {
   it("cycles in workspace order in both directions, independent of DOM order", () => {
     using fixture = setup();
@@ -51,7 +42,7 @@ describe("workspace area focus", () => {
     const composer = fixture.area("composer", 2);
     sidebar.button.focus();
     fixture.controller.move(1);
-    // Without a timeline (an empty thread), the region takes focus rather than its first button.
+    // The conversation is a region; it takes focus itself rather than its first button.
     expect(document.activeElement).toBe(conversation.element);
     fixture.controller.move(1);
     expect(document.activeElement).toBe(composer.button);
@@ -141,19 +132,6 @@ describe("workspace area focus", () => {
     expect(document.activeElement).toBe(nav.button);
   });
 
-  it("enters the Settings sections on the open section", () => {
-    using fixture = setup();
-    const nav = fixture.area("settings-nav", 0);
-    const content = fixture.area("settings", 1);
-    nav.element.insertAdjacentHTML(
-      "beforeend",
-      '<button data-settings-section="/settings/general">General</button><button data-settings-section="/settings/chat" aria-current="page">Chat</button>',
-    );
-    content.button.focus();
-    fixture.controller.move(-1);
-    expect(document.activeElement).toBe(nav.element.querySelector('[aria-current="page"]'));
-  });
-
   it("keeps moving while a shortcut recorder is on the page but not focused", () => {
     using fixture = setup();
     const nav = fixture.area("settings-nav", 0);
@@ -213,7 +191,8 @@ describe("workspace area focus", () => {
   it("does not scroll the conversation to an old control", () => {
     using fixture = setup();
     const conversation = fixture.area("conversation", 1);
-    const timeline = conversationScroller(50);
+    const timeline = document.createElement("div");
+    timeline.style.cssText = "height: 50px; overflow-y: auto";
     const copy = document.createElement("button");
     copy.textContent = "Copy";
     timeline.append(copy, Object.assign(document.createElement("div"), { style: "height: 400px" }));
@@ -225,26 +204,8 @@ describe("workspace area focus", () => {
     // Live follow moved the timeline to the newest output.
     timeline.scrollTop = 300;
     fixture.controller.move(-1);
-    expect(document.activeElement).toBe(timeline);
-    expect(timeline.scrollTop).toBe(300);
-  });
-
-  it("scrolls the conversation with the keyboard once an empty thread gets a timeline", async () => {
-    using fixture = setup();
-    const conversation = fixture.area("conversation", 1);
-    conversation.button.remove();
-    conversation.element.style.height = "200px";
-    const composer = fixture.area("composer", 2);
-    composer.button.focus();
-    fixture.controller.move(-1);
     expect(document.activeElement).toBe(conversation.element);
-    fixture.controller.move(1);
-    const timeline = conversationScroller(200);
-    timeline.append(Object.assign(document.createElement("div"), { style: "height: 2000px" }));
-    conversation.element.append(timeline);
-    fixture.controller.move(-1);
-    await userEvent.keyboard("{ArrowDown}{PageDown}");
-    await vi.waitFor(() => expect(timeline.scrollTop).toBeGreaterThan(0));
+    expect(timeline.scrollTop).toBe(300);
   });
 
   it.each([
@@ -307,9 +268,7 @@ describe("workspace area focus", () => {
     bringBack.textContent = "Bring back";
     content.append(bringBack);
     panel.element.append(content);
-    const timeline = conversationScroller(50);
-    timeline.append(Object.assign(document.createElement("div"), { style: "height: 400px" }));
-    fixture.area("conversation", 1, content).element.append(timeline);
+    fixture.area("conversation", 1, content);
     const composer = fixture.area("composer", 2, content);
     const editor = document.createElement("div");
     editor.contentEditable = "true";

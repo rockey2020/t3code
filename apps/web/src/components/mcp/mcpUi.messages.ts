@@ -1,7 +1,6 @@
 import type { Locale } from "../../i18n/locale";
 
 export const mcpUiMessages = {
-  "Get {app}": "获取 {app}",
   "Use T3 Code in another app (MCP) · {name}": "在其他应用中使用 T3 Code（MCP）· {name}",
   "Connect to an environment first.": "请先连接一个环境。",
   "T3 Connect is not available in this build.": "此版本不支持 T3 Connect。",

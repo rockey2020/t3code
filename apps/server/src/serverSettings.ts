@@ -237,7 +237,7 @@ function ensureProviderInstanceMutationAllowed(
 ): Effect.Effect<void, ServerSettingsError> {
   if (
     mutation.operation === "create" &&
-    Object.hasOwn(settings.providerInstances, mutation.instanceId)
+    settings.providerInstances[mutation.instanceId] !== undefined
   ) {
     return Effect.fail(
       new ServerSettingsError({

@@ -33,7 +33,6 @@ const layerRejectedBeforeSession = Layer.succeed(
     isPartition: () => false,
     getSession: () => Effect.die("getSession must not be reached"),
     clearCookies: () => Effect.die("clearCookies must not be reached"),
-    cookiesCleared: () => Effect.die("cookiesCleared must not be reached"),
     clearCache: () => Effect.die("clearCache must not be reached"),
   }),
 );
@@ -89,7 +88,7 @@ describe("BrowserImport.importCookies", () => {
 
       assert.instanceOf(error, BrowserImport.BrowserImportFailedError);
       assert.equal(error.reason, "unknownSourceProfile");
-    }).pipe(Effect.provide(NodeServices.layer)),
+    }).pipe(Effect.provide(NodeServices.layer), Effect.scoped),
   );
 
   it.effect.skipIf(!symlinksSupported)(
@@ -114,7 +113,7 @@ describe("BrowserImport.importCookies", () => {
 
         assert.instanceOf(error, BrowserImport.BrowserImportFailedError);
         assert.equal(error.reason, "browserRunning");
-      }).pipe(Effect.provide(NodeServices.layer)),
+      }).pipe(Effect.provide(NodeServices.layer), Effect.scoped),
   );
 });
 

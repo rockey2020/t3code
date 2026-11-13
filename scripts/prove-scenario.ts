@@ -53,11 +53,6 @@ export interface SideResult {
   readonly status: "passed" | "failed" | "error";
   readonly title: string;
   readonly message?: string;
-  /**
-   * For `error`, what stopped: `app` when the app did not start or no test ran, `scenario` when
-   * the app ran and the scenario stopped before its assertion, such as on a control it did not find.
-   */
-  readonly stopped?: "app" | "scenario";
   readonly steps: ReadonlyArray<{ readonly step: string; readonly status: string }>;
   /** Capture paths under the run's results directory, in the order the scenario took them. */
   readonly captures: ReadonlyArray<string>;
@@ -80,16 +75,7 @@ export function readSide(
       executed.length > 1
         ? `the scenario file ran ${executed.length} tests; a proof needs exactly one`
         : "e2e wrote no report: the app did not start, or no test was selected";
-    return {
-      sha,
-      status: "error",
-      stopped: "app",
-      title: "",
-      message,
-      steps: [],
-      captures: [],
-      videos: [],
-    };
+    return { sha, status: "error", title: "", message, steps: [], captures: [], videos: [] };
   }
   const files = (kind: string) =>
     (attempt.artifacts ?? []).flatMap((artifact) =>
@@ -98,18 +84,15 @@ export function readSide(
         : [],
     );
   const error = attempt.error;
-  // e2e exits 0 for a skipped test too, and a test that did not run proves nothing.
-  const status =
-    attempt.status === "passed"
-      ? "passed"
-      : error?.code === "ASSERTION_FAILED"
-        ? "failed"
-        : "error";
   return {
     sha,
-    status,
-    // A test that ended with an error of its own got as far as the app.
-    ...(status === "error" ? { stopped: error === undefined ? "app" : "scenario" } : {}),
+    // e2e exits 0 for a skipped test too, and a test that did not run proves nothing.
+    status:
+      attempt.status === "passed"
+        ? "passed"
+        : error?.code === "ASSERTION_FAILED"
+          ? "failed"
+          : "error",
     title: result.titlePath.join(" > "),
     ...(error === undefined
       ? attempt.status === "passed"
@@ -140,7 +123,7 @@ export function buildProof(base: SideResult, head: SideResult, link: (path: stri
   const broken = base.status === "error" ? base : head.status === "error" ? head : undefined;
   const verdict =
     broken !== undefined
-      ? `Not proven: the scenario could not run on ${broken === base ? `base ${baseSha}` : `head ${headSha}`} (${broken.message ?? "unknown error"}).${broken.stopped === "scenario" ? " The app ran and the scenario stopped before its assertion: fix the scenario and run it again." : ""}`
+      ? `Not proven: the scenario could not run on ${broken === base ? `base ${baseSha}` : `head ${headSha}`} (${broken.message ?? "unknown error"}).`
       : base.status === "passed"
         ? head.status === "passed"
           ? `Not proven: the scenario passes on base ${baseSha} too, so it does not reproduce the bug.`
@@ -177,8 +160,6 @@ export function buildProof(base: SideResult, head: SideResult, link: (path: stri
     scenario: head.title || base.title,
     failsOnBase: base.status === "failed",
     passesOnHead: head.status === "passed",
-    /** Why there is no verdict on the behavior: the app did not run, or the scenario stopped. */
-    couldNotRun: broken?.stopped ?? null,
     baseSha: base.sha,
     headSha: head.sha,
     verdict,
@@ -211,18 +192,10 @@ const withCheckout = Effect.fn("prove.withCheckout")(function* <A, E, R>(
   if (clean && (yield* git(["rev-parse", "HEAD"])) === sha) return yield* use(repo);
   // Beside this checkout, not in the temp directory, so tooling resolves as it does here.
   const worktree = `${repo}-scenario-${short(sha)}`;
-  // A run that was killed left its worktree behind, and git refuses to add over it.
-  const discard = git(["worktree", "remove", "--force", worktree]).pipe(
-    Effect.ignore,
-    Effect.andThen(git(["worktree", "prune"])),
-    Effect.ignore,
-  );
   return yield* Effect.acquireUseRelease(
-    discard.pipe(
-      Effect.andThen(git(["worktree", "add", "--quiet", "--detach", "--force", worktree, sha])),
-    ),
+    git(["worktree", "add", "--quiet", "--detach", "--force", worktree, sha]),
     () => run("vp", ["i"], { cwd: worktree, echo: true }).pipe(Effect.andThen(use(worktree))),
-    () => discard,
+    () => git(["worktree", "remove", "--force", worktree]).pipe(Effect.ignore),
   );
 });
 
@@ -231,7 +204,6 @@ const runSide = Effect.fn("prove.runSide")(function* (
   side: "base" | "head",
   rev: string,
   scenarioPath: string,
-  target: string,
 ) {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
@@ -244,7 +216,7 @@ const runSide = Effect.fn("prove.runSide")(function* (
     // The scenario and e2e come from this checkout; only the app comes from `appDir`.
     run(
       path.join(scripts, "node_modules/.bin/e2e"),
-      ["run", scenarioPath, "--target", target, "--output", path.relative(scripts, outDir)],
+      ["run", scenarioPath, "--output", path.relative(scripts, outDir)],
       {
         cwd: scripts,
         env: { ...environment, T3_SCENARIO_APP_DIR: appDir, E2E_TELEMETRY_DISABLED: "1" },
@@ -258,22 +230,7 @@ const runSide = Effect.fn("prove.runSide")(function* (
     Effect.flatMap(decodeReport),
     Effect.orElseSucceed(() => undefined),
   );
-  const result = readSide(sha, path.join(outDir, "results"), report);
-  // Written as each side ends, so a proof whose second side is cut short still has its first.
-  yield* fs
-    .writeFileString(
-      path.join(scripts, ".e2e/prove", `${side}.json`),
-      `${yield* encodeProof(result)}\n`,
-    )
-    .pipe(Effect.ignore);
-  return result;
-});
-
-/** The one target a scenario runs on: an iOS scenario imports `t3-mobile.ts`, a web one does not. */
-const targetOf = Effect.fn("prove.targetOf")(function* (scenarioPath: string) {
-  const fs = yield* FileSystem.FileSystem;
-  const source = yield* fs.readFileString(scenarioPath).pipe(Effect.orElseSucceed(() => ""));
-  return source.includes("t3-mobile") ? "ios" : "web";
+  return readSide(sha, path.join(outDir, "results"), report);
 });
 
 /** Uploads the captures and maps each to its URL; a failed upload leaves the map empty. */
@@ -305,7 +262,6 @@ const prove = Effect.fn("prove")(function* (input: {
   readonly base: string;
   readonly head: string;
   readonly uploadCommand: Option.Option<string>;
-  readonly target: Option.Option<string>;
 }) {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
@@ -315,10 +271,8 @@ const prove = Effect.fn("prove")(function* (input: {
   // A proof left by an earlier run must not be read as this one's.
   yield* fs.remove(proveDir, { recursive: true, force: true });
   yield* fs.makeDirectory(proveDir, { recursive: true });
-  // Only that target's app starts: a web scenario needs no Metro and no device.
-  const target = Option.getOrElse(input.target, () => "") || (yield* targetOf(scenarioPath));
-  const base = yield* runSide("base", input.base, scenarioPath, target);
-  const head = yield* runSide("head", input.head, scenarioPath, target);
+  const base = yield* runSide("base", input.base, scenarioPath);
+  const head = yield* runSide("head", input.head, scenarioPath);
   const links = Option.isSome(input.uploadCommand)
     ? yield* upload(input.uploadCommand.value, [...base.captures, ...head.captures])
     : new Map<string, string>();
@@ -331,13 +285,8 @@ const prove = Effect.fn("prove")(function* (input: {
   yield* fs.writeFileString(path.join(proveDir, "proof.md"), proof.markdown);
   yield* fs.writeFileString(path.join(proveDir, "proof.json"), `${json}\n`);
   yield* Console.log(json);
-  return proof.failsOnBase && proof.passesOnHead
-    ? 0
-    : proof.couldNotRun === "scenario"
-      ? 3
-      : proof.couldNotRun === "app"
-        ? 2
-        : 1;
+  const couldNotRun = base.status === "error" || head.status === "error";
+  return proof.failsOnBase && proof.passesOnHead ? 0 : couldNotRun ? 2 : 1;
 });
 
 const command = Command.make(
@@ -353,12 +302,6 @@ const command = Command.make(
     ),
     uploadCommand: Flag.String("upload-command").pipe(
       Flag.withDescription("Command that takes capture paths and prints one URL per line."),
-      Flag.optional,
-    ),
-    target: Flag.String("target").pipe(
-      Flag.withDescription(
-        "Target to run on: web or ios. Default: ios when the scenario imports t3-mobile.ts, else web.",
-      ),
       Flag.optional,
     ),
   },

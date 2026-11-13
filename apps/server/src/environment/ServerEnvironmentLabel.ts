@@ -116,8 +116,6 @@ const runFriendlyLabelCommand = Effect.fn("runFriendlyLabelCommand")(function* (
     .run({
       command: input.command,
       args: input.args,
-      // Server startup waits on this; hostnamectl can block on D-Bus when hostnamed is down.
-      timeout: "5 seconds",
       timeoutBehavior: "timedOutResult",
     })
     .pipe(

@@ -429,7 +429,7 @@ export const make = Effect.gen(function* () {
         ...(input.pinned === undefined ? {} : { pinned: input.pinned }),
         ...(input.archived === undefined ? {} : { archived: input.archived }),
       });
-      if (workspaceRoot !== previousRoot || input.faviconPath !== undefined) {
+      if (workspaceRoot !== previousRoot) {
         yield* projectEnrichment.invalidate([previousRoot, workspaceRoot]);
       }
       return yield* readCommitted(input.projectId);
@@ -505,10 +505,7 @@ export const make = Effect.gen(function* () {
           (cause) => new ProjectOperationError({ operation: "list-threads", projectId, cause }),
         ),
       );
-    // Newest first: a source deleted while its fork lives keeps the pages that fork shows.
-    const projectThreads = [...snapshot.threads, ...snapshot.archivedThreads].sort(
-      (a, b) => DateTime.toEpochMillis(b.createdAt) - DateTime.toEpochMillis(a.createdAt),
-    );
+    const projectThreads = [...snapshot.threads, ...snapshot.archivedThreads];
     if (projectThreads.length > 0 && input.force !== true) {
       return yield* new ProjectNotEmptyError({ projectId });
     }

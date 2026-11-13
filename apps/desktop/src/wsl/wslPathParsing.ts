@@ -9,8 +9,7 @@ export interface WslConfig {
 }
 
 // Literal spaces only; \s would accept controls and corrupt UNC distro paths.
-// "." and ".." would be path segments in a UNC path, not distro names.
-const DISTRO_NAME_PATTERN = /^(?!\.{1,2}$)[\w.-](?:[\w .-]*[\w.-])?$/;
+const DISTRO_NAME_PATTERN = /^\w(?:[\w \-.]*\w)?$/;
 
 export function parseWslDistroList(stdout: Buffer): readonly WslDistro[] {
   const hasUtf16Bom = stdout.length >= 2 && stdout[0] === 0xff && stdout[1] === 0xfe;

@@ -121,10 +121,7 @@ export const museUsageReader: ProviderUsageReader<
   kind: "transcripts",
   provider: "muse",
   format: museUsageFormat,
-  directories: Effect.fn("museUsageReader.directories")(function* (
-    { config, environment },
-    { awaitRefresh },
-  ) {
+  directories: Effect.fn("museUsageReader.directories")(function* ({ config, environment }) {
     const path = yield* Path.Path;
     const home = yield* HostProcess.HomeDirectory;
     const usageHome = yield* MuseUsageHome.MuseUsageHome;
@@ -134,15 +131,10 @@ export const museUsageReader: ProviderUsageReader<
       ),
       yield* HostProcess.Environment,
     );
-    const binaryPath = expandHomePath(config?.binaryPath ?? "muse", home);
     const museHome = yield* usageHome.resolve({
-      binaryPath,
+      binaryPath: expandHomePath(config?.binaryPath ?? "muse", home),
       environment: makeMuseEnvironment(processEnvironment),
-      awaitRefresh,
     });
-    if (Option.isNone(museHome)) return [{ dir: binaryPath, refreshing: true }];
-    return museHome.value
-      ? [{ dir: path.join(museHome.value, "sessions"), fileName: "session.jsonl" }]
-      : [];
+    return museHome ? [{ dir: path.join(museHome, "sessions"), fileName: "session.jsonl" }] : [];
   }),
 };

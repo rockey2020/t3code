@@ -28,7 +28,7 @@ import {
   textGeneratorBrand,
   textGeneratorDisplayName,
 } from "../../textGenerators";
-import { getTextGenerationModelOptionsByInstance } from "../../modelSelection";
+import { getCustomModelOptionsByInstance } from "../../modelSelection";
 import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
 import { ProviderModelPicker } from "../chat/ProviderModelPicker";
 import {
@@ -587,7 +587,7 @@ function TextGenerationTaskPicker({
           model={selection.model}
           lockedProvider={null}
           instanceEntries={targets.entries}
-          modelOptionsByInstance={getTextGenerationModelOptionsByInstance(
+          modelOptionsByInstance={getCustomModelOptionsByInstance(
             settings,
             targets.providers,
             selection.instanceId,

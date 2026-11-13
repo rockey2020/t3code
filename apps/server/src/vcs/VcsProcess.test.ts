@@ -92,7 +92,7 @@ describe("VcsProcess.run", () => {
       yield* fs.remove(lock);
       yield* git(restore);
       expect(yield* fs.readFileString(file)).toBe("before\n");
-    }).pipe(provideLive, Effect.provide(NodeServices.layer)),
+    }).pipe(provideLive, Effect.provide(NodeServices.layer), Effect.scoped),
   );
 
   it.effect.each([

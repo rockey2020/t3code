@@ -5,11 +5,11 @@ import { generalMessages } from "./generalMessages";
 import { translateSettingsLabel } from "./settingsMessages";
 import { settingsPanelsMessages, translatePanelLabel } from "./settingsPanels.messages";
 import { useLocalizedSetting } from "./useLocalizedSetting";
+import { LanguageSettings } from "./LanguageSettings";
 import { useAtomValue } from "@effect/atom-react";
 import { NotificationSettings } from "./NotificationSettings";
 import { PRIVACY_POLICY_URL } from "../../legalLinks";
 import { CheckIcon } from "lucide-react";
-import { msg, T, useGT, useMessages } from "gt-react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useRef, useState } from "react";
 import {
@@ -74,7 +74,7 @@ import { SnoozePresetsRow } from "./SnoozePresetsSettings";
 import { useDesktopUpdateState } from "../../state/desktopUpdate";
 import { managedTelemetryOffMessage, usePrimaryManagedPolicy } from "../../state/managedPolicy";
 import {
-  getTextGenerationModelOptionsByInstance,
+  getCustomModelOptionsByInstance,
   resolveAppModelSelectionState,
   selectsPlanAgent,
 } from "../../modelSelection";
@@ -111,9 +111,7 @@ import {
   SettingsRow,
   SettingsSection,
 } from "./settingsLayout";
-import { searchableSetting, type SettingsSearchItemId } from "./settingsSearch";
-import { nativeLanguageName, SYSTEM_LANGUAGE } from "@t3tools/client-runtime/locales";
-import { SUPPORTED_LOCALES } from "../../i18n/locales";
+import { searchableSetting } from "./settingsSearch";
 import { BackgroundActivitySettingsRow } from "./BackgroundActivitySettings";
 import { AdvancedSettings } from "./AdvancedSettings";
 import { PullRequestLinksOpenInAppSetting } from "./IntegrationsSettings";
@@ -123,7 +121,6 @@ import { environmentIdsKey } from "~/state/environmentAtomList";
 import { environmentSessionStatesAtom } from "~/state/session";
 import { useCheckProviderUpdates } from "../ProviderUpdatesAction";
 import { canUpdateServer } from "../ServerUpdateAction";
-import { downloadLocalUpdate } from "../sidebar/SidebarUpdatePill";
 import { useUpdateEverythingRun } from "../sidebar/updateEverythingRun";
 import { awaitsTrackSwitch, channelSwitchLabel } from "../sidebar/updateEverything.logic";
 import { isHostedByThisApp } from "../sidebar/useUpdateEverything";
@@ -138,29 +135,29 @@ const RESPONSE_STREAMING_MODE_DESCRIPTIONS: Record<ResponseStreamingMode, string
   paragraph: "Each paragraph or code block appears as soon as it is complete.",
 };
 
-const SIDEBAR_PROJECT_SORT_ORDER_LABELS: Record<SidebarProjectSortOrder, string> = {
-  updated_at: msg("Last user message"),
-  created_at: msg("Created at"),
-  manual: msg("Manual"),
-};
+const SIDEBAR_PROJECT_SORT_ORDER_LABELS = {
+  updated_at: "Last user message",
+  created_at: "Created at",
+  manual: "Manual",
+} as const satisfies Record<SidebarProjectSortOrder, string>;
 const isSidebarProjectSortOrder = Schema.is(SidebarProjectSortOrder);
 
 const TIMESTAMP_FORMAT_LABELS = {
-  locale: msg("System default"),
-  "12-hour": msg("12-hour"),
-  "24-hour": msg("24-hour"),
-};
+  locale: "System default",
+  "12-hour": "12-hour",
+  "24-hour": "24-hour",
+} as const;
 
 const DIFF_LAYOUT_LABELS: Record<DiffLayout, string> = {
   stacked: "Stacked",
   split: "Split",
 };
 
-const QUIT_CONFIRMATION_MODE_LABELS: Record<QuitConfirmationMode, string> = {
-  direct: msg("Direct"),
-  hold: msg("Hold"),
-  "double-click": msg("Double press"),
-};
+const QUIT_CONFIRMATION_MODE_LABELS = {
+  direct: "Direct",
+  hold: "Hold",
+  "double-click": "Double press",
+} as const satisfies Record<QuitConfirmationMode, string>;
 
 const DEFAULT_DRIVER_KIND = ProviderDriverKind.make("codex");
 
@@ -229,7 +226,15 @@ function AboutVersionSection() {
     const action = updateState ? resolveDesktopUpdateButtonAction(updateState) : "none";
 
     if (action === "download") {
-      void downloadLocalUpdate(bridge, { notifyDownloaded: false });
+      void bridge.downloadUpdate().catch((error: unknown) => {
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title: t("Could not download update"),
+            description: error instanceof Error ? error.message : t("Download failed."),
+          }),
+        );
+      });
       return;
     }
 
@@ -244,7 +249,6 @@ function AboutVersionSection() {
               updateState ?? { availableVersion: null, downloadedVersion: null },
             ),
           ),
-          { initialFocus: "confirm" },
         );
       } catch (error) {
         setIsUpdateActionPending(false);
@@ -512,7 +516,6 @@ export function useSettingsRestore(onRestored?: () => void) {
     DEFAULT_UNIFIED_SETTINGS.environmentIdentificationMode
       ? ["Environment identification"]
       : []),
-    ...(settings.language !== DEFAULT_UNIFIED_SETTINGS.language ? ["Language"] : []),
     ...(settings.timestampFormat !== DEFAULT_UNIFIED_SETTINGS.timestampFormat
       ? ["Time format"]
       : []),
@@ -582,9 +585,6 @@ export function useSettingsRestore(onRestored?: () => void) {
     ...(settings.screenReaderAnnouncements !== DEFAULT_UNIFIED_SETTINGS.screenReaderAnnouncements
       ? ["Screen reader announcements"]
       : []),
-    ...(settings.screenReaderWindowTitle !== DEFAULT_UNIFIED_SETTINGS.screenReaderWindowTitle
-      ? ["Screen reader window title"]
-      : []),
     ...(settings.responseStreamingMode !== DEFAULT_UNIFIED_SETTINGS.responseStreamingMode
       ? ["Response streaming"]
       : []),
@@ -596,9 +596,6 @@ export function useSettingsRestore(onRestored?: () => void) {
       ? ["Continue threads after restarts"]
       : []),
     ...(isBackgroundActivityDirty ? ["Background activity"] : []),
-    ...(settings.keepAwakeWhileAgentsWork !== DEFAULT_UNIFIED_SETTINGS.keepAwakeWhileAgentsWork
-      ? ["Keep awake while agents work"]
-      : []),
     ...(settings.defaultThreadEnvMode !== DEFAULT_UNIFIED_SETTINGS.defaultThreadEnvMode
       ? ["New thread mode"]
       : []),
@@ -694,7 +691,6 @@ export function useSettingsRestore(onRestored?: () => void) {
       chatWidth: DEFAULT_UNIFIED_SETTINGS.chatWidth,
       effortDisplay: DEFAULT_UNIFIED_SETTINGS.effortDisplay,
       mathRenderingEnabled: DEFAULT_UNIFIED_SETTINGS.mathRenderingEnabled,
-      language: DEFAULT_UNIFIED_SETTINGS.language,
       timestampFormat: DEFAULT_UNIFIED_SETTINGS.timestampFormat,
       notificationMode: DEFAULT_UNIFIED_SETTINGS.notificationMode,
       inAppNotificationsEnabled: DEFAULT_UNIFIED_SETTINGS.inAppNotificationsEnabled,
@@ -710,7 +706,6 @@ export function useSettingsRestore(onRestored?: () => void) {
       followUpBehavior: DEFAULT_UNIFIED_SETTINGS.followUpBehavior,
       toolCallVisibility: DEFAULT_UNIFIED_SETTINGS.toolCallVisibility,
       screenReaderAnnouncements: DEFAULT_UNIFIED_SETTINGS.screenReaderAnnouncements,
-      screenReaderWindowTitle: DEFAULT_UNIFIED_SETTINGS.screenReaderWindowTitle,
       environmentIdentificationMode: DEFAULT_UNIFIED_SETTINGS.environmentIdentificationMode,
       glassOpacity: DEFAULT_UNIFIED_SETTINGS.glassOpacity,
       panelAnimationDurationMs: DEFAULT_UNIFIED_SETTINGS.panelAnimationDurationMs,
@@ -727,7 +722,6 @@ export function useSettingsRestore(onRestored?: () => void) {
       enableProviderUpdateChecks: DEFAULT_UNIFIED_SETTINGS.enableProviderUpdateChecks,
       continueThreadsAfterServerUpdate: DEFAULT_UNIFIED_SETTINGS.continueThreadsAfterServerUpdate,
       backgroundActivity: DEFAULT_UNIFIED_SETTINGS.backgroundActivity,
-      keepAwakeWhileAgentsWork: DEFAULT_UNIFIED_SETTINGS.keepAwakeWhileAgentsWork,
       backgroundActivityProfile: DEFAULT_UNIFIED_SETTINGS.backgroundActivityProfile,
       automaticGitFetchInterval: DEFAULT_UNIFIED_SETTINGS.automaticGitFetchInterval,
       providerHealthRefreshInterval: DEFAULT_UNIFIED_SETTINGS.providerHealthRefreshInterval,
@@ -813,55 +807,43 @@ function AutoSettleDaysInput({
   );
 }
 
-/** Row anchor props with the registry title in the active language. */
-function useTranslatedSearchableSetting() {
-  const m = useMessages();
-  return (id: SettingsSearchItemId) => {
-    const setting = searchableSetting(id);
-    return { ...setting, title: m(setting.title) };
-  };
-}
-
 export function GeneralSettingsPanel() {
   const t = useTranslation(generalMessages);
-  const gt = useGT();
-  const m = useMessages();
-  const setting = useTranslatedSearchableSetting();
+  const locale = useLocale();
+  const localizedSetting = (id: Parameters<typeof searchableSetting>[0]) => {
+    const item = searchableSetting(id);
+    return { ...item, title: translateSettingsLabel(item.title, locale) };
+  };
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
   const lastEnabledProjectGroupingMode = useRef<SidebarProjectGroupingMode>(
     readLastEnabledProjectGroupingMode(),
   );
-  const languageValue = SUPPORTED_LOCALES.includes(settings.language)
-    ? settings.language
-    : SYSTEM_LANGUAGE;
 
   return (
     <SettingsPageContainer>
-      <SettingsSection id="notifications" title={gt("Notifications")}>
+      <LanguageSettings />
+      <SettingsSection id="notifications" title={t("Notifications")}>
         <NotificationSettings />
         <SettingsRow
-          {...setting("in-app-notifications")}
-          description={
-            <T>
-              Show a toast when another thread finishes, fails, or needs input or approval while
-              this app has focus.
-            </T>
-          }
+          {...localizedSetting("in-app-notifications")}
+          description={t(
+            "Show a toast when another thread finishes, fails, or needs input or approval while this app has focus.",
+          )}
           control={
             <Switch
               checked={settings.inAppNotificationsEnabled}
               onCheckedChange={(checked) => updateSettings({ inAppNotificationsEnabled: checked })}
-              aria-label={gt("In-app notifications")}
+              aria-label={t("In-app notifications")}
             />
           }
         />
       </SettingsSection>
 
-      <SettingsSection id="sidebar" title={gt("Sidebar")}>
+      <SettingsSection id="sidebar" title={t("Sidebar")}>
         <SettingsRow
-          {...setting("project-grouping")}
-          description={<T>Combine matching repositories across environments.</T>}
+          {...localizedSetting("project-grouping")}
+          description={t("Combine matching repositories across environments.")}
           resetAction={
             settings.sidebarProjectGroupingMode !==
             DEFAULT_UNIFIED_SETTINGS.sidebarProjectGroupingMode ? (
@@ -890,13 +872,13 @@ export function GeneralSettingsPanel() {
                   ),
                 });
               }}
-              aria-label={gt("Project grouping")}
+              aria-label={t("Project grouping")}
             />
           }
         />
         <SettingsRow
-          {...setting("project-order")}
-          description={<T>Order of projects in the sidebar project picker and command palette.</T>}
+          {...localizedSetting("project-order")}
+          description={t("Order of projects in the sidebar project picker and command palette.")}
           resetAction={
             settings.sidebarProjectSortOrder !==
             DEFAULT_UNIFIED_SETTINGS.sidebarProjectSortOrder ? (
@@ -919,15 +901,15 @@ export function GeneralSettingsPanel() {
                 }
               }}
             >
-              <SelectTrigger size="sm" className="w-full sm:w-44" aria-label={gt("Project order")}>
+              <SelectTrigger size="sm" className="w-full sm:w-44" aria-label={t("Project order")}>
                 <SelectValue>
-                  {m(SIDEBAR_PROJECT_SORT_ORDER_LABELS[settings.sidebarProjectSortOrder])}
+                  {t(SIDEBAR_PROJECT_SORT_ORDER_LABELS[settings.sidebarProjectSortOrder])}
                 </SelectValue>
               </SelectTrigger>
               <SelectPopup align="end" alignItemWithTrigger={false}>
                 {SidebarProjectSortOrder.literals.map((sortOrder) => (
                   <SelectItem hideIndicator key={sortOrder} value={sortOrder}>
-                    {m(SIDEBAR_PROJECT_SORT_ORDER_LABELS[sortOrder])}
+                    {t(SIDEBAR_PROJECT_SORT_ORDER_LABELS[sortOrder])}
                   </SelectItem>
                 ))}
               </SelectPopup>
@@ -935,13 +917,10 @@ export function GeneralSettingsPanel() {
           }
         />
         <SettingsRow
-          {...setting("working-shelf")}
-          description={
-            <T>
-              Fold working and monitoring threads into a Working section. They return to the top of
-              the inbox when they need you. The boring sidebar in Labs has no Working section.
-            </T>
-          }
+          {...localizedSetting("working-shelf")}
+          description={t(
+            "Fold working and monitoring threads into a Working section. They return to the top of the inbox when they need you. The boring sidebar in Labs has no Working section.",
+          )}
           resetAction={
             settings.sidebarWorkingShelfEnabled !==
             DEFAULT_UNIFIED_SETTINGS.sidebarWorkingShelfEnabled ? (
@@ -961,16 +940,16 @@ export function GeneralSettingsPanel() {
               onCheckedChange={(checked) =>
                 updateSettings({ sidebarWorkingShelfEnabled: Boolean(checked) })
               }
-              aria-label={gt("Working section")}
+              aria-label={t("Working section")}
             />
           }
         />
       </SettingsSection>
 
-      <SettingsSection id="confirmations" title={gt("Confirmations")}>
+      <SettingsSection id="confirmations" title={t("Confirmations")}>
         <SettingsRow
-          {...setting("unpin-confirmation")}
-          description={<T>Ask before unpinning a thread from the pinned section.</T>}
+          {...localizedSetting("unpin-confirmation")}
+          description={t("Ask before unpinning a thread from the pinned section.")}
           resetAction={
             settings.confirmThreadUnpin !== DEFAULT_UNIFIED_SETTINGS.confirmThreadUnpin ? (
               <SettingResetButton
@@ -989,15 +968,15 @@ export function GeneralSettingsPanel() {
               onCheckedChange={(checked) =>
                 updateSettings({ confirmThreadUnpin: Boolean(checked) })
               }
-              aria-label={gt("Confirm thread unpinning")}
+              aria-label={t("Confirm thread unpinning")}
             />
           }
         />
         <SettingsRow
-          {...setting("archive-confirmation")}
-          description={
-            <T>Require a second click on the inline archive action before a thread is archived.</T>
-          }
+          {...localizedSetting("archive-confirmation")}
+          description={t(
+            "Require a second click on the inline archive action before a thread is archived.",
+          )}
           resetAction={
             settings.confirmThreadArchive !== DEFAULT_UNIFIED_SETTINGS.confirmThreadArchive ? (
               <SettingResetButton
@@ -1016,13 +995,13 @@ export function GeneralSettingsPanel() {
               onCheckedChange={(checked) =>
                 updateSettings({ confirmThreadArchive: Boolean(checked) })
               }
-              aria-label={gt("Confirm thread archiving")}
+              aria-label={t("Confirm thread archiving")}
             />
           }
         />
         <SettingsRow
-          {...setting("delete-confirmation")}
-          description={<T>Ask before deleting a thread and its chat history.</T>}
+          {...localizedSetting("delete-confirmation")}
+          description={t("Ask before deleting a thread and its chat history.")}
           resetAction={
             settings.confirmThreadDelete !== DEFAULT_UNIFIED_SETTINGS.confirmThreadDelete ? (
               <SettingResetButton
@@ -1041,14 +1020,14 @@ export function GeneralSettingsPanel() {
               onCheckedChange={(checked) =>
                 updateSettings({ confirmThreadDelete: Boolean(checked) })
               }
-              aria-label={gt("Confirm thread deletion")}
+              aria-label={t("Confirm thread deletion")}
             />
           }
         />
         {isElectron ? (
           <SettingsRow
-            {...setting("quit-confirmation")}
-            description={<T>Hold mode also quits on two quick presses.</T>}
+            {...localizedSetting("quit-confirmation")}
+            description={t("Hold mode also quits on two quick presses.")}
             resetAction={
               settings.confirmQuit !== DEFAULT_UNIFIED_SETTINGS.confirmQuit ? (
                 <SettingResetButton
@@ -1071,16 +1050,16 @@ export function GeneralSettingsPanel() {
                 <SelectTrigger
                   size="sm"
                   className="w-full sm:w-40"
-                  aria-label={gt("Quit shortcut behavior")}
+                  aria-label={t("Quit shortcut behavior")}
                 >
                   <SelectValue>
-                    {m(QUIT_CONFIRMATION_MODE_LABELS[settings.confirmQuit])}
+                    {t(QUIT_CONFIRMATION_MODE_LABELS[settings.confirmQuit])}
                   </SelectValue>
                 </SelectTrigger>
                 <SelectPopup align="end" alignItemWithTrigger={false}>
                   {Object.entries(QUIT_CONFIRMATION_MODE_LABELS).map(([value, label]) => (
                     <SelectItem hideIndicator key={value} value={value}>
-                      {m(label)}
+                      {t(label)}
                     </SelectItem>
                   ))}
                 </SelectPopup>
@@ -1090,54 +1069,10 @@ export function GeneralSettingsPanel() {
         ) : null}
       </SettingsSection>
 
-      <SettingsSection id="display" title={gt("Display")}>
+      <SettingsSection id="display" title={t("Display")}>
         <SettingsRow
-          {...setting("language")}
-          description={<T>System default follows your browser or OS language.</T>}
-          resetAction={
-            settings.language !== DEFAULT_UNIFIED_SETTINGS.language ? (
-              <SettingResetButton
-                label="language"
-                onClick={() =>
-                  updateSettings({
-                    language: DEFAULT_UNIFIED_SETTINGS.language,
-                  })
-                }
-              />
-            ) : null
-          }
-          control={
-            <Select
-              value={languageValue}
-              onValueChange={(value) => {
-                if (value) {
-                  updateSettings({ language: value });
-                }
-              }}
-            >
-              <SelectTrigger size="sm" className="w-full sm:w-40" aria-label={gt("Language")}>
-                <SelectValue>
-                  {languageValue === SYSTEM_LANGUAGE
-                    ? m(TIMESTAMP_FORMAT_LABELS.locale)
-                    : nativeLanguageName(languageValue)}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectPopup align="end" alignItemWithTrigger={false}>
-                <SelectItem hideIndicator value={SYSTEM_LANGUAGE}>
-                  {m(TIMESTAMP_FORMAT_LABELS.locale)}
-                </SelectItem>
-                {SUPPORTED_LOCALES.map((locale) => (
-                  <SelectItem hideIndicator key={locale} value={locale}>
-                    {nativeLanguageName(locale)}
-                  </SelectItem>
-                ))}
-              </SelectPopup>
-            </Select>
-          }
-        />
-        <SettingsRow
-          {...setting("time-format")}
-          description={<T>System default follows your browser or OS clock preference.</T>}
+          {...localizedSetting("time-format")}
+          description={t("System default follows your browser or OS clock preference.")}
           resetAction={
             settings.timestampFormat !== DEFAULT_UNIFIED_SETTINGS.timestampFormat ? (
               <SettingResetButton
@@ -1162,19 +1097,19 @@ export function GeneralSettingsPanel() {
               <SelectTrigger
                 size="sm"
                 className="w-full sm:w-40"
-                aria-label={gt("Timestamp format")}
+                aria-label={t("Timestamp format")}
               >
-                <SelectValue>{m(TIMESTAMP_FORMAT_LABELS[settings.timestampFormat])}</SelectValue>
+                <SelectValue>{t(TIMESTAMP_FORMAT_LABELS[settings.timestampFormat])}</SelectValue>
               </SelectTrigger>
               <SelectPopup align="end" alignItemWithTrigger={false}>
                 <SelectItem hideIndicator value="locale">
-                  {m(TIMESTAMP_FORMAT_LABELS.locale)}
+                  {t(TIMESTAMP_FORMAT_LABELS.locale)}
                 </SelectItem>
                 <SelectItem hideIndicator value="12-hour">
-                  {m(TIMESTAMP_FORMAT_LABELS["12-hour"])}
+                  {t(TIMESTAMP_FORMAT_LABELS["12-hour"])}
                 </SelectItem>
                 <SelectItem hideIndicator value="24-hour">
-                  {m(TIMESTAMP_FORMAT_LABELS["24-hour"])}
+                  {t(TIMESTAMP_FORMAT_LABELS["24-hour"])}
                 </SelectItem>
               </SelectPopup>
             </Select>
@@ -1362,11 +1297,7 @@ export function ChatSettingsPanel() {
 
       <SettingsSection id="activity" title={t("Activity")}>
         <ToolCallVisibilityRow />
-      </SettingsSection>
-
-      <SettingsSection id="screen-reader" title={t("Screen reader")}>
         <ScreenReaderAnnouncementsRow />
-        <ScreenReaderWindowTitleRow />
       </SettingsSection>
     </SettingsPageContainer>
   );
@@ -1483,40 +1414,6 @@ function ScreenReaderAnnouncementsRow() {
             ))}
           </SelectPopup>
         </Select>
-      }
-    />
-  );
-}
-
-function ScreenReaderWindowTitleRow() {
-  const t = useTranslation(settingsDetailUiMessages);
-  const localizedSetting = useLocalizedSetting();
-  const settings = useScopedSettings();
-  const updateSettings = useUpdateScopedSettings();
-  return (
-    <SettingsRow
-      {...localizedSetting("screen-reader-window-title")}
-      description={t(
-        "Start the window title with the thread's status, like Needs approval, and its name, so screen readers read them first when you switch apps. Taskbars, shared screens, and time trackers see it too.",
-      )}
-      resetAction={
-        settings.screenReaderWindowTitle !== DEFAULT_UNIFIED_SETTINGS.screenReaderWindowTitle ? (
-          <SettingResetButton
-            label={t("screen reader window title")}
-            onClick={() =>
-              updateSettings({
-                screenReaderWindowTitle: DEFAULT_UNIFIED_SETTINGS.screenReaderWindowTitle,
-              })
-            }
-          />
-        ) : null
-      }
-      control={
-        <Switch
-          checked={settings.screenReaderWindowTitle}
-          onCheckedChange={(checked) => updateSettings({ screenReaderWindowTitle: checked })}
-          aria-label={t("Screen reader window title")}
-        />
       }
     />
   );
@@ -1842,7 +1739,7 @@ export function ThreadsSettingsPanel() {
   );
   const textGenProvider: ProviderDriverKind =
     textGenInstanceEntry?.driverKind ?? DEFAULT_DRIVER_KIND;
-  const textGenerationModelOptionsByInstance = getTextGenerationModelOptionsByInstance(
+  const textGenerationModelOptionsByInstance = getCustomModelOptionsByInstance(
     settings,
     textGenerationProviders,
     textGenInstanceId,
@@ -1855,7 +1752,6 @@ export function ThreadsSettingsPanel() {
   const textGenerationModelDisabledReason = useScopedModelDisabledReason(
     settings,
     textGenerationModelInstanceEntries,
-    true,
   );
   const mixedAddProjectBaseDirectory = useScopedSettingsMixed(["addProjectBaseDirectory"]);
   const mixedTextGenerationModel = useScopedSettingsMixed(["textGenerationModelSelection"]);
@@ -2324,37 +2220,6 @@ export function MaintenanceSettingsPanel() {
 
       <SettingsSection id="background" title={t("Background activity")}>
         <BackgroundActivitySettingsRow />
-        <SettingsRow
-          serverScoped
-          settingKeys={["keepAwakeWhileAgentsWork"]}
-          {...localizedSetting("keep-awake-while-agents-work")}
-          description={t(
-            "Stop the computer from going to sleep while agents are working, and let it sleep once they finish. Closing a laptop lid still puts it to sleep.",
-          )}
-          resetAction={
-            settings.keepAwakeWhileAgentsWork !==
-            DEFAULT_UNIFIED_SETTINGS.keepAwakeWhileAgentsWork ? (
-              <SettingResetButton
-                label={t("keep awake while agents work")}
-                onClick={() =>
-                  updateSettings({
-                    keepAwakeWhileAgentsWork: DEFAULT_UNIFIED_SETTINGS.keepAwakeWhileAgentsWork,
-                  })
-                }
-              />
-            ) : null
-          }
-          control={
-            <ScopedSwitch
-              settingKeys={["keepAwakeWhileAgentsWork"]}
-              checked={settings.keepAwakeWhileAgentsWork}
-              onCheckedChange={(checked) =>
-                updateSettings({ keepAwakeWhileAgentsWork: Boolean(checked) })
-              }
-              aria-label={t("Keep awake while agents work")}
-            />
-          }
-        />
       </SettingsSection>
 
       <StorageCleanupSections />

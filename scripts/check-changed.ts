@@ -197,6 +197,31 @@ export const splitTests = (tests: Iterable<string>) => {
     nodeTests: all.filter((file) => NODE_TEST.test(file)),
   };
 };
+
+export const vitestSteps = <R>(
+  tests: ReadonlyArray<string>,
+  run: (args: ReadonlyArray<string>) => Step<R>["run"],
+): Array<Step<R>> => {
+  // Large syncs exhaust the shared watchdog while serial server tests are still advancing.
+  // Give that workspace its own budget without splitting its serial stream or tiny packages.
+  const server = (file: string) => /^apps[/\\]server[/\\]/.test(file);
+  const groups =
+    tests.length > 250
+      ? [tests.filter((file) => !server(file)), tests.filter(server)].filter(
+          (files) => files.length > 0,
+        )
+      : tests.length > 0
+        ? [tests]
+        : [];
+  return groups.map((files, index) => ({
+    name:
+      groups.length > 1
+        ? `test ${index === 0 ? "non-server" : "server"} (${files.length} files)`
+        : `test (${files.length} files)`,
+    run: run(["test", "run", "--passWithNoTests", ...files]),
+    serial: true,
+  }));
+};
 const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 // A flag wins over its environment variable; either must be a positive integer.
@@ -544,19 +569,7 @@ const checkChanged = Effect.fn("checkChanged")(function* (input: {
         ]
       : []),
     // From the repo root, the root vite.config.ts hands each file to its package's config.
-    ...(vitestTests.length > 0
-      ? [
-          {
-            ...command(`test (${vitestTests.length} files)`, [
-              "test",
-              "run",
-              "--passWithNoTests",
-              ...vitestTests,
-            ]),
-            serial: true,
-          },
-        ]
-      : []),
+    ...vitestSteps(vitestTests, vp),
     ...(nodeTests.length > 0
       ? [
           command(`node --test (${nodeTests.length} files)`, [

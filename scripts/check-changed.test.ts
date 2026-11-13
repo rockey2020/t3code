@@ -22,6 +22,7 @@ import {
   gitLines,
   runSteps,
   splitTests,
+  vitestSteps,
   type Step,
 } from "./check-changed.ts";
 import { decide, readWorkspace } from "../.github/scripts/ci-changes.cjs";
@@ -141,6 +142,63 @@ describe("check:changed", () => {
         ],
       );
     }),
+  );
+
+  it.effect(
+    "keeps large test batches serial, lets other checks run, and continues after a timeout",
+    () =>
+      Effect.gen(function* () {
+        const files = [
+          ...Array.from({ length: 249 }, (_, index) => `packages/shared/case-${index}.test.ts`),
+          "apps/server/src/case.test.ts",
+          "apps\\server\\src\\windows.test.ts",
+          "apps/server-tools/case.test.ts",
+        ];
+        const planned: Array<ReadonlyArray<string>> = [];
+        const startedAt: Record<string, number> = {};
+        let active = 0;
+        let maxActive = 0;
+        const steps = vitestSteps(files, (args) => {
+          planned.push(args.slice(3));
+          const name = args.includes("apps/server/src/case.test.ts") ? "server" : "other";
+          return Effect.gen(function* () {
+            startedAt[name] = (yield* Clock.currentTimeMillis) / 1000;
+            maxActive = Math.max(maxActive, ++active);
+            if (name === "other") return yield* Effect.never;
+            return { ok: false, output: "failure still fails" };
+          }).pipe(Effect.ensuring(Effect.sync(() => active--)));
+        });
+        const fiber = yield* runSteps(
+          [
+            ...steps,
+            {
+              name: "unrelated",
+              run: Effect.gen(function* () {
+                startedAt.unrelated = (yield* Clock.currentTimeMillis) / 1000;
+                return { ok: true, output: "" };
+              }),
+            },
+          ],
+          { concurrency: 3, timeoutSeconds: 10 },
+        ).pipe(Effect.forkChild);
+        yield* TestClock.adjust("10 seconds");
+        const results = yield* Fiber.join(fiber);
+        assert.deepStrictEqual(planned.flat().sort(), [...files].sort());
+        assert.deepStrictEqual(planned[1], [
+          "apps/server/src/case.test.ts",
+          "apps\\server\\src\\windows.test.ts",
+        ]);
+        assert.strictEqual(maxActive, 1);
+        assert.deepStrictEqual(startedAt, { other: 0, unrelated: 0, server: 10 });
+        assert.deepStrictEqual(
+          results.map(({ outcome }) => outcome),
+          ["TIMEOUT", "FAIL", "pass"],
+        );
+        assert.deepStrictEqual(
+          vitestSteps([], () => Effect.succeed({ ok: true, output: "" })),
+          [],
+        );
+      }),
   );
 
   it("runs the .github/scripts node:test files with node --test, not vitest", () => {
@@ -563,3 +621,51 @@ it("streams a sequential check's output before it exits", async () => {
   expect(output.match(/fixture stdout: lint/g)).toHaveLength(1);
   expect(output).toContain("pass  lint");
 });
+
+it.each(["", "test"])(
+  "runs every selected file once across large test batches (failure: %s)",
+  (failStep) => {
+    using project = launcherFixture();
+    const files = Array.from(
+      { length: 251 },
+      (_, index) => `${index < 180 ? "apps/server/src" : "packages/example"}/case-${index}.test.ts`,
+    );
+    for (const file of files) project.write(file, "export {};\n");
+    const result = project.run(failStep, ["--concurrency", "3"]);
+    expect(result.status, result.stdout + result.stderr).toBe(failStep ? 1 : 0);
+    const tests = project.calls().filter(({ args }) => args[0] === "test");
+    expect(tests).toHaveLength(2);
+    expect(tests.flatMap(({ args }) => args.slice(3)).sort()).toEqual(files.sort());
+    for (const { args } of tests) {
+      expect(args.slice(0, 3)).toEqual(["test", "run", "--passWithNoTests"]);
+      const selected = args.slice(3);
+      expect(
+        selected.every((file) => file.startsWith("apps/server/")) ||
+          selected.every((file) => !file.startsWith("apps/server/")),
+      ).toBe(true);
+    }
+    expect(
+      NodeFS.existsSync(NodePath.join(project.root, "node_modules/.cache/check-changed.json")),
+    ).toBe(!failStep);
+  },
+);
+
+it.each(["small mixed", "large server-only"])(
+  "keeps a %s selection in one test invocation",
+  (kind) => {
+    using project = launcherFixture();
+    const count = kind === "small mixed" ? 250 : 251;
+    const files = Array.from(
+      { length: count },
+      (_, index) =>
+        `${kind === "small mixed" && index % 2 === 0 ? "packages/example" : "apps/server/src"}/case-${index}.test.ts`,
+    );
+    for (const file of files) project.write(file, "export {};\n");
+    const result = project.run("", ["--concurrency", "3"]);
+    expect(result.status, result.stdout + result.stderr).toBe(0);
+    const tests = project.calls().filter(({ args }) => args[0] === "test");
+    expect(tests).toHaveLength(1);
+    expect(tests[0]?.args).toEqual(["test", "run", "--passWithNoTests", ...files.sort()]);
+    expect(result.stdout).toContain(`pass  test (${count} files)`);
+  },
+);

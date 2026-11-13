@@ -17,6 +17,12 @@ const testState = vi.hoisted(() => ({
   serverVersions: new Map<string, string>(),
 }));
 
+// Exercise upstream update behavior; the fork suite covers the production-disabled policy.
+vi.mock(import("@t3tools/shared/appUpdatePolicy"), async (original) => ({
+  ...(await original()),
+  APP_UPDATES_ENABLED: true,
+}));
+
 vi.mock(import("~/hooks/useCopyToClipboard"), async (original) => ({
   ...(await original()),
   useCopyToClipboard: ((options: { onCopy: (context: { command: string }) => void }) => ({
